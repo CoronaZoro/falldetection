@@ -9,7 +9,7 @@ import threading
 from ultralytics import YOLO
 from core.fall_logic import FallLogic, ALARM, RECOVERY, STABLE, TRANSITION, VALIDATION, INACTIVITY
 from core.sos_gesture import SOSGestureDetector
-from alerts.server import start_server, broadcast_fall, broadcast_sos, broadcast_recovery
+from alerts.server import start_server, broadcast_fall, broadcast_sos, broadcast_recovery, update_frame
 
 model   = YOLO("models/best.pt")
 logic   = FallLogic()
@@ -40,7 +40,7 @@ print("[Main] Alert server running on port 8765 ✅")
 print("[Main] Find your IP with: ipconfig getifaddr en0")
 
 print("\nStarting webcam... Press Q to quit\n")
-CAMERA_INDEX = 0
+CAMERA_INDEX = 1
 
 cap = cv2.VideoCapture(CAMERA_INDEX)
 
@@ -208,6 +208,10 @@ while True:
                    (10, h - 10),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.55,
                    (180, 180, 180), 1)
+
+    # ── Push annotated frame to MJPEG stream ──────────────
+    _, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    update_frame(jpeg.tobytes())
 
     cv2.imshow("Fall Detection — Hackathon Demo", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):

@@ -10,6 +10,7 @@ import threading
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 app = FastAPI(title="Fall Detection Alert Server")
 
@@ -27,6 +28,18 @@ connections: list[WebSocket] = []
 # Track pending acknowledgements
 # event_id → {"ts": float, "timer": threading.Timer}
 pending: dict = {}
+
+# MJPEG frame buffer — written by main OpenCV thread, read by /video endpoint
+latest_frame: bytes | None = None
+
+# Event loop reference — captured on startup so sync threads can schedule coroutines
+_loop: asyncio.AbstractEventLoop | None = None
+
+
+@app.on_event("startup")
+async def _on_startup():
+    global _loop
+    _loop = asyncio.get_event_loop()
 
 
 # ── WebSocket endpoint ────────────────────────────────────
@@ -58,6 +71,34 @@ async def health():
         "connections": len(connections),
         "timestamp": time.time()
     }
+
+
+# ── MJPEG video stream ─────────────────────────────────────
+async def _mjpeg_generator():
+    """Yields the latest annotated frame as a multipart JPEG stream."""
+    while True:
+        if latest_frame is not None:
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n"
+                + latest_frame
+                + b"\r\n"
+            )
+        await asyncio.sleep(0.033)  # ~30 fps cap
+
+
+@app.get("/video")
+async def video_feed():
+    return StreamingResponse(
+        _mjpeg_generator(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+    )
+
+
+def update_frame(jpeg_bytes: bytes) -> None:
+    """Called from the main OpenCV loop with the fully-annotated JPEG frame."""
+    global latest_frame
+    latest_frame = jpeg_bytes
 
 
 # ── Broadcast helpers ─────────────────────────────────────
@@ -120,19 +161,15 @@ def broadcast_heartbeat(persons_detected: int):
 
 # ── Internal helpers ──────────────────────────────────────
 def _broadcast(payload: dict):
-    """Send to all connected dashboards."""
+    """Send to all connected dashboards (safe to call from any thread)."""
+    if not _loop or not connections:
+        return
     message = json.dumps(payload)
-    dead    = []
-
-    for ws in connections:
+    for ws in list(connections):
         try:
-            # Schedule on event loop
-            asyncio.run(ws.send_text(message))
+            asyncio.run_coroutine_threadsafe(ws.send_text(message), _loop)
         except Exception:
-            dead.append(ws)
-
-    for ws in dead:
-        connections.remove(ws)
+            pass
 
 
 def _handle_ack(event_id: str):

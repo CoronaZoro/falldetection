@@ -1,0 +1,69 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String     @id @default(cuid())
+  name      String
+  email     String     @unique
+  password  String
+  role      Role       @default(RESPONDER)
+  phone     String?
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  incidents Incident[]
+}
+
+enum Role {
+  ADMIN
+  RESPONDER
+}
+
+model Incident {
+  id              String         @id @default(cuid())
+  eventId         String         @unique
+  type            IncidentType
+  personId        Int
+  ar              Float
+  downDuration    Float
+  status          IncidentStatus @default(UNACKNOWLEDGED)
+  acknowledgedBy  String?
+  acknowledgedAt  DateTime?
+  resolvedAt      DateTime?
+  notes           String?
+  reportGenerated Boolean        @default(false)
+  reportText      String?
+  createdAt       DateTime       @default(now())
+  user            User?          @relation(fields: [acknowledgedBy], references: [id])
+}
+
+enum IncidentType {
+  FALL
+  SOS
+}
+
+enum IncidentStatus {
+  UNACKNOWLEDGED
+  ACKNOWLEDGED
+  RESPONDING
+  ON_SCENE
+  RESOLVED
+  FALSE_ALARM
+}
+
+model SystemConfig {
+  id                String   @id @default(cuid())
+  cameraIndex       Int      @default(0)
+  arThreshold       Float    @default(1.5)
+  transitionTime    Float    @default(1.2)
+  confirmSeconds    Float    @default(1.5)
+  twilioEnabled     Boolean  @default(false)
+  twilioNumber      String?
+  escalationSeconds Int      @default(15)
+  updatedAt         DateTime @updatedAt
+}
