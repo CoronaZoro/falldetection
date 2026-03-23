@@ -2,10 +2,10 @@ import DetectionSettingsClient from "@/components/admin/DetectionSettingsClient"
 
 export default function CameraPage() {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+    <div className="flex flex-col gap-4">
       <div>
-        <h1 style={{ fontSize: "1.25rem", fontWeight: 700, color: "#c8d0e0" }}>Camera Settings</h1>
-        <p style={{ fontSize: "0.85rem", color: "#4a5568" }}>Manage camera index and feed</p>
+        <h1 className="text-base font-semibold text-[#c9d1e0]">Camera Settings</h1>
+        <p className="section-label mt-0.5">Manage camera index and feed</p>
       </div>
       <DetectionSettingsClient />
     </div>

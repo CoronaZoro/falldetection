@@ -154,5 +154,8 @@ npm run dev              # Start on port 3000
 - Only truly dynamic values (state-dependent colors/widths like alert banner border color, countdown bar width %) use inline `style={}` — everything static is Tailwind
 - Custom colors use Tailwind arbitrary value syntax: `bg-[#0a0c10]`, `text-[#c8d0e0]`, `border-[#1e2229]`
 - Opacity variants: `bg-[#ff3355]/10`, `border-[#3b82f6]/20`
-- Font mono uses `font-mono` (mapped to JetBrains Mono via `--font-mono` in `@theme`)
-- Build verified: `npm run build` passes with 19 pages ✅
+- **Font rules**: Inter (sans-serif) for all UI text; JetBrains Mono (`font-mono`) only for data values — AR numbers, timestamps, IDs, person counts
+- **`section-label` utility**: `10px, uppercase, tracking-wide, #4a5568` — used for all card headers, form labels, panel subtitles
+- **Page titles**: `text-base font-semibold text-[#c9d1e0]` — compact but legible
+- **Alert hierarchy**: alarm states use dynamic border + background tint from `alertColor`; calm states use flat `#111318` surface
+- Build verified: `npm run build` passes with 19 pages ✅ (after full UI cleanup)

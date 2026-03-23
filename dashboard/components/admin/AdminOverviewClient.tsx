@@ -50,14 +50,14 @@ interface StatCardProps {
 
 function StatCard({ label, value, sub, icon, iconBg }: StatCardProps) {
   return (
-    <div className="bg-[#111318] border border-[#1e2229] rounded-lg px-5 py-4 flex items-center gap-4">
-      <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${iconBg}`}>
+    <div className="bg-[#111318] border border-[#1e2229] rounded px-4 py-3 flex items-center gap-3">
+      <div className={`w-8 h-8 rounded flex items-center justify-center shrink-0 ${iconBg}`}>
         {icon}
       </div>
       <div>
-        <p className="text-[12px] text-[#4a5568]">{label}</p>
-        <p className="text-[22px] font-bold font-mono text-[#c8d0e0] leading-tight">{value}</p>
-        {sub && <p className="text-[11px] text-[#4a5568]">{sub}</p>}
+        <p className="section-label">{label}</p>
+        <p className="text-xl font-bold font-mono text-[#c9d1e0] leading-tight">{value}</p>
+        {sub && <p className="section-label mt-0">{sub}</p>}
       </div>
     </div>
   );
@@ -65,8 +65,8 @@ function StatCard({ label, value, sub, icon, iconBg }: StatCardProps) {
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-[#111318] border border-[#1e2229] rounded-lg p-4">
-      <p className="text-sm font-semibold text-[#c8d0e0] mb-4">{title}</p>
+    <div className="bg-[#111318] border border-[#1e2229] rounded p-3">
+      <p className="section-label mb-3">{title}</p>
       {children}
     </div>
   );
@@ -89,14 +89,14 @@ export default function AdminOverviewClient() {
   if (!data) return null;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <div>
-        <h1 className="text-xl font-bold text-[#c8d0e0]">System Overview</h1>
-        <p className="text-sm text-[#4a5568]">Real-time monitoring dashboard</p>
+        <h1 className="text-base font-semibold text-[#c9d1e0]">System Overview</h1>
+        <p className="section-label mt-0.5">Real-time monitoring dashboard</p>
       </div>
 
       {/* Stat cards */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
         <StatCard label="Falls Today"      value={data.fallsToday}     icon={<AlertTriangle size={18} className="text-[#ff3355]" />} iconBg="bg-[#ff3355]/10" />
         <StatCard label="Falls This Week"  value={data.fallsWeek}      icon={<TrendingUp    size={18} className="text-[#ffaa00]" />} iconBg="bg-[#ffaa00]/10" />
         <StatCard label="Falls This Month" value={data.fallsMonth}     icon={<Activity      size={18} className="text-[#3b82f6]" />} iconBg="bg-[#3b82f6]/10" />
@@ -110,7 +110,7 @@ export default function AdminOverviewClient() {
       </div>
 
       {/* Charts row */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1fr 200px" }}>
+      <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr 200px" }}>
         <ChartCard title="Falls Per Day (7d)">
           <ResponsiveContainer width="100%" height={160}>
             <LineChart data={data.fallsPerDayChart}>
@@ -158,14 +158,14 @@ export default function AdminOverviewClient() {
       </div>
 
       {/* Recent incidents */}
-      <div className="bg-[#111318] border border-[#1e2229] rounded-lg p-4">
-        <p className="text-sm font-semibold text-[#c8d0e0] mb-4">Recent Incidents</p>
+      <div className="bg-[#111318] border border-[#1e2229] rounded p-3">
+        <p className="section-label mb-3">Recent Incidents</p>
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[13px]">
+          <table className="w-full border-collapse text-xs">
             <thead>
               <tr className="border-b border-[#1e2229]">
                 {["Time", "Type", "Duration", "AR", "Responder", "Status"].map((h) => (
-                  <th key={h} className="py-2 px-3 text-left text-[#4a5568] font-medium">{h}</th>
+                  <th key={h} className="py-2 px-3 text-left section-label font-medium">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -177,13 +177,13 @@ export default function AdminOverviewClient() {
               ) : (
                 data.recentIncidents.map((inc) => (
                   <tr key={inc.id} className="border-b border-[#1e2229]">
-                    <td className="py-2 px-3 text-[#4a5568] font-mono text-[12px] whitespace-nowrap">
+                    <td className="py-2 px-3 text-[#4a5568] font-mono whitespace-nowrap">
                       {new Date(inc.createdAt).toLocaleTimeString()}
                     </td>
                     <td className="py-2 px-3"><StatusBadge status={inc.type} /></td>
-                    <td className="py-2 px-3 text-[#c8d0e0]">{inc.downDuration.toFixed(1)}s</td>
-                    <td className="py-2 px-3 text-[#c8d0e0] font-mono">{inc.ar.toFixed(2)}</td>
-                    <td className="py-2 px-3 text-[#c8d0e0]">{inc.user?.name ?? "—"}</td>
+                    <td className="py-2 px-3 text-[#c9d1e0] font-mono">{inc.downDuration.toFixed(1)}s</td>
+                    <td className="py-2 px-3 text-[#c9d1e0] font-mono">{inc.ar.toFixed(2)}</td>
+                    <td className="py-2 px-3 text-[#c9d1e0]">{inc.user?.name ?? "—"}</td>
                     <td className="py-2 px-3"><StatusBadge status={inc.status} /></td>
                   </tr>
                 ))

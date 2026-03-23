@@ -26,19 +26,19 @@ export default function ResponderIncidentsPage() {
   }, []);
 
   return (
-    <div className="max-w-[900px] mx-auto flex flex-col gap-6">
+    <div className="max-w-[900px] mx-auto flex flex-col gap-4">
       <div>
-        <h1 className="text-xl font-bold text-[#c8d0e0]">My Incidents</h1>
-        <p className="text-sm text-[#4a5568]">Incidents you have acknowledged</p>
+        <h1 className="text-base font-semibold text-[#c9d1e0]">My Incidents</h1>
+        <p className="section-label mt-0.5">Incidents you have acknowledged</p>
       </div>
 
-      <div className="bg-[#111318] border border-[#1e2229] rounded-lg overflow-hidden">
+      <div className="bg-[#111318] border border-[#1e2229] rounded overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
+          <table className="w-full border-collapse text-xs">
             <thead>
               <tr className="border-b border-[#1e2229]">
                 {["Time", "Type", "Duration", "AR", "Response", "Status", ""].map((h) => (
-                  <th key={h} className="py-3 px-3 text-left text-[#4a5568] font-medium">{h}</th>
+                  <th key={h} className="py-2.5 px-3 text-left section-label">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -54,13 +54,13 @@ export default function ResponderIncidentsPage() {
                     : "—";
                   return (
                     <tr key={inc.id} className="border-b border-[#1e2229]">
-                      <td className="py-2.5 px-3 text-[#4a5568] font-mono text-[12px] whitespace-nowrap">
+                      <td className="py-2.5 px-3 text-[#4a5568] font-mono whitespace-nowrap">
                         {new Date(inc.createdAt).toLocaleString()}
                       </td>
                       <td className="py-2.5 px-3"><StatusBadge status={inc.type} /></td>
-                      <td className="py-2.5 px-3 text-[#c8d0e0]">{inc.downDuration.toFixed(1)}s</td>
-                      <td className="py-2.5 px-3 text-[#c8d0e0] font-mono">{inc.ar.toFixed(2)}</td>
-                      <td className="py-2.5 px-3 text-[#c8d0e0] font-mono">{rt}</td>
+                      <td className="py-2.5 px-3 text-[#c9d1e0] font-mono">{inc.downDuration.toFixed(1)}s</td>
+                      <td className="py-2.5 px-3 text-[#c9d1e0] font-mono">{inc.ar.toFixed(2)}</td>
+                      <td className="py-2.5 px-3 text-[#c9d1e0] font-mono">{rt}</td>
                       <td className="py-2.5 px-3"><StatusBadge status={inc.status} /></td>
                       <td className="py-2.5 px-3">
                         <Link href={`/responder/incidents/${inc.id}`} className="text-[#3b82f6] flex items-center hover:text-[#60a5fa]">

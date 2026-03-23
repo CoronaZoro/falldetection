@@ -78,17 +78,17 @@ export default function IncidentDetailClient({ id, role }: Props) {
       </button>
 
       <div>
-        <div className="flex items-center gap-3 mb-1">
-          <h1 className="text-xl font-bold text-[#c8d0e0]">Incident Detail</h1>
-          <StatusBadge status={incident.type}   size="md" />
-          <StatusBadge status={incident.status} size="md" />
+        <div className="flex items-center gap-2 mb-1">
+          <h1 className="text-base font-semibold text-[#c9d1e0]">Incident Detail</h1>
+          <StatusBadge status={incident.type}   size="sm" />
+          <StatusBadge status={incident.status} size="sm" />
         </div>
-        <p className="text-[13px] text-[#4a5568] font-mono">{incident.eventId}</p>
+        <p className="text-xs text-[#4a5568] font-mono">{incident.eventId}</p>
       </div>
 
       {/* Data grid */}
-      <div className="bg-[#111318] border border-[#1e2229] rounded-lg p-5">
-        <p className="text-sm font-semibold text-[#c8d0e0] mb-4">Incident Data</p>
+      <div className="bg-[#111318] border border-[#1e2229] rounded p-4">
+        <p className="section-label mb-3">Incident Data</p>
         <div className="grid grid-cols-2 gap-3">
           {[
             ["Person ID",         `#${incident.personId}`],
@@ -100,43 +100,43 @@ export default function IncidentDetailClient({ id, role }: Props) {
             ["Acknowledged by",   incident.user?.name ?? "—"],
           ].map(([label, val]) => (
             <div key={label as string}>
-              <p className="text-[11px] text-[#4a5568] mb-0.5">{label}</p>
-              <p className="text-[15px] text-[#c8d0e0] font-mono">{val}</p>
+              <p className="section-label mb-0.5">{label}</p>
+              <p className="text-sm text-[#c9d1e0] font-mono">{val}</p>
             </div>
           ))}
         </div>
       </div>
 
       {/* Notes */}
-      <div className="bg-[#111318] border border-[#1e2229] rounded-lg p-5">
-        <p className="text-sm font-semibold text-[#c8d0e0] mb-3">Notes</p>
+      <div className="bg-[#111318] border border-[#1e2229] rounded p-4">
+        <p className="section-label mb-3">Notes</p>
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           placeholder="Add notes about this incident..."
           rows={4}
-          className="w-full bg-[#0a0c10] border border-[#1e2229] rounded px-3 py-2.5 text-[#c8d0e0] text-sm outline-none focus:border-[#3b82f6] resize-y transition-colors font-[inherit]"
+          className="w-full bg-[#0a0c10] border border-[#1e2229] rounded px-3 py-2 text-[#c9d1e0] text-xs outline-none focus:border-[#3b82f6] resize-y transition-colors"
         />
         <button
           onClick={saveNotes}
-          className="mt-3 bg-[#3b82f6] hover:bg-[#2563eb] border-none rounded px-4 py-2 text-white font-semibold text-sm cursor-pointer transition-colors"
+          className="mt-2 bg-[#3b82f6] hover:bg-[#2563eb] border-none rounded px-3 py-1.5 text-white font-semibold text-xs cursor-pointer transition-colors"
         >
           Save Notes
         </button>
       </div>
 
       {/* AI Report */}
-      <div className="bg-[#111318] border border-[#1e2229] rounded-lg p-5">
+      <div className="bg-[#111318] border border-[#1e2229] rounded p-4">
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <FileText size={16} className="text-[#8b5cf6]" />
-            <p className="text-sm font-semibold text-[#c8d0e0]">AI Incident Report</p>
+          <div className="flex items-center gap-1.5">
+            <FileText size={13} className="text-[#8b5cf6]" />
+            <p className="section-label">AI Incident Report</p>
           </div>
           {!incident.reportGenerated && (
             <button
               onClick={generateReport}
               disabled={genReport}
-              className="flex items-center gap-1.5 bg-[#8b5cf6] hover:bg-[#7c3aed] border-none rounded px-3 py-1.5 text-white font-semibold text-sm cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center gap-1.5 bg-[#8b5cf6] hover:bg-[#7c3aed] border-none rounded px-3 py-1.5 text-white font-semibold text-xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
             >
               {genReport && <Loader2 size={13} className="animate-spin" />}
               Generate Report
@@ -146,7 +146,7 @@ export default function IncidentDetailClient({ id, role }: Props) {
 
         {incident.reportText ? (
           <div>
-            <p className="text-sm text-[#c8d0e0] leading-relaxed bg-[#8b5cf6]/[0.06] rounded border-l-[3px] border-[#8b5cf6] px-3.5 py-3">
+            <p className="text-xs text-[#c9d1e0] leading-relaxed bg-[#8b5cf6]/06 rounded border-l-2 border-[#8b5cf6] px-3 py-2.5">
               {incident.reportText}
             </p>
             <button
@@ -156,13 +156,13 @@ export default function IncidentDetailClient({ id, role }: Props) {
                 const a    = document.createElement("a");
                 a.href = url; a.download = `incident-${incident.eventId}.txt`; a.click();
               }}
-              className="mt-3 bg-transparent border border-[#1e2229] rounded px-3 py-1.5 text-[#4a5568] hover:text-[#c8d0e0] text-sm cursor-pointer transition-colors"
+              className="mt-3 bg-transparent border border-[#1e2229] rounded px-3 py-1.5 text-[#4a5568] hover:text-[#c9d1e0] text-xs cursor-pointer transition-colors"
             >
               Download Report
             </button>
           </div>
         ) : (
-          <p className="text-sm text-[#4a5568]">
+          <p className="text-xs text-[#4a5568]">
             {incident.status === "RESOLVED"
               ? "Click 'Generate Report' to create an AI-written incident summary."
               : "Report generation is available once the incident is resolved."}

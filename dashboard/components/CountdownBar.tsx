@@ -15,26 +15,27 @@ export default function CountdownBar({ seconds, onExpire, color = "#ff3355" }: P
     setRemaining(seconds);
     const interval = setInterval(() => {
       setRemaining((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          onExpire?.();
-          return 0;
-        }
+        if (prev <= 1) { clearInterval(interval); onExpire?.(); return 0; }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(interval);
   }, [seconds, onExpire]);
 
-  const pct = (remaining / seconds) * 100;
+  const pct         = (remaining / seconds) * 100;
   const urgentColor = remaining <= 5 ? "#ff3355" : remaining <= 10 ? "#ffaa00" : color;
-  const textColor = remaining <= 5 ? "text-[#ff3355]" : remaining <= 10 ? "text-[#ffaa00]" : "text-[#c8d0e0]";
+  const urgent      = remaining <= 5;
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-[#4a5568]">Auto-escalate in</span>
-        <span className={`font-mono text-lg font-bold ${textColor}`}>{remaining}s</span>
+    <div className="flex flex-col gap-2">
+      <div className="flex items-baseline justify-between">
+        <span className="section-label">escalates in</span>
+        <span
+          className={`font-mono font-bold text-2xl leading-none ${urgent ? "animate-alarm" : ""}`}
+          style={{ color: urgentColor }}
+        >
+          {remaining}<span className="text-sm font-medium ml-0.5">s</span>
+        </span>
       </div>
       <div className="h-1 bg-[#1e2229] rounded-full overflow-hidden">
         <div

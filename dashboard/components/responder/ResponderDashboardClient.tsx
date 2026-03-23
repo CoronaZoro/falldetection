@@ -9,8 +9,14 @@ import StatusBadge from "@/components/StatusBadge";
 import ChatPanel from "@/components/responder/ChatPanel";
 import VoiceLog from "@/components/responder/VoiceLog";
 import {
-  Activity, Wifi, WifiOff, Users, AlertTriangle, Hand,
-  CheckCircle, ChevronRight,
+  Wifi,
+  WifiOff,
+  Activity,
+  Users,
+  AlertTriangle,
+  Hand,
+  CheckCircle,
+  ChevronRight,
 } from "lucide-react";
 import type { WSMessage, EventLogEntry, IncidentStatus } from "@/types";
 
@@ -31,20 +37,24 @@ interface Props {
 let eventCounter = 0;
 
 export default function ResponderDashboardClient({ userId, userName }: Props) {
-  const [systemState, setSystemState]       = useState<string>("STABLE");
+  const [systemState, setSystemState] = useState("STABLE");
   const [personsDetected, setPersonsDetected] = useState(0);
-  const [activeAlert, setActiveAlert]       = useState<Alert | null>(null);
+  const [activeAlert, setActiveAlert] = useState<Alert | null>(null);
   const [alertIncidentId, setAlertIncidentId] = useState<string | null>(null);
-  const [incidentStatus, setIncidentStatus] = useState<IncidentStatus>("UNACKNOWLEDGED");
-  const [eventLog, setEventLog]             = useState<EventLogEntry[]>([]);
-  const [voiceLog, setVoiceLog]             = useState<string[]>([]);
+  const [incidentStatus, setIncidentStatus] =
+    useState<IncidentStatus>("UNACKNOWLEDGED");
+  const [eventLog, setEventLog] = useState<EventLogEntry[]>([]);
+  const [voiceLog, setVoiceLog] = useState<string[]>([]);
 
-  const addEvent = useCallback((type: EventLogEntry["type"], message: string, timestamp: number) => {
-    setEventLog((prev) => [
-      { id: String(++eventCounter), type, message, timestamp },
-      ...prev.slice(0, 49),
-    ]);
-  }, []);
+  const addEvent = useCallback(
+    (type: EventLogEntry["type"], message: string, timestamp: number) => {
+      setEventLog((prev) => [
+        { id: String(++eventCounter), type, message, timestamp },
+        ...prev.slice(0, 49),
+      ]);
+    },
+    [],
+  );
 
   const handleMessage = useCallback(
     async (msg: WSMessage) => {
@@ -54,45 +64,90 @@ export default function ResponderDashboardClient({ userId, userName }: Props) {
         return;
       }
       if (msg.type === "fall_alert" && msg.event_id) {
-        addEvent("fall", `Fall detected — Person ${msg.person_id ?? 0} (AR: ${msg.ar?.toFixed(2)})`, msg.timestamp);
+        addEvent(
+          "fall",
+          `Fall detected — Person ${msg.person_id ?? 0} (AR: ${msg.ar?.toFixed(2)})`,
+          msg.timestamp,
+        );
         setSystemState("ALARM");
-        setActiveAlert({ eventId: msg.event_id, type: "fall", personId: msg.person_id ?? 0, ar: msg.ar, downDuration: msg.down_duration, timestamp: msg.timestamp });
+        setActiveAlert({
+          eventId: msg.event_id,
+          type: "fall",
+          personId: msg.person_id ?? 0,
+          ar: msg.ar,
+          downDuration: msg.down_duration,
+          timestamp: msg.timestamp,
+        });
         setIncidentStatus("UNACKNOWLEDGED");
         setAlertIncidentId(null);
         try {
           const res = await fetch("/api/incidents", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ eventId: msg.event_id, type: "FALL", personId: msg.person_id ?? 0, ar: msg.ar ?? 0, downDuration: msg.down_duration ?? 0 }),
+            body: JSON.stringify({
+              eventId: msg.event_id,
+              type: "FALL",
+              personId: msg.person_id ?? 0,
+              ar: msg.ar ?? 0,
+              downDuration: msg.down_duration ?? 0,
+            }),
           });
-          if (res.ok) { const d = await res.json(); setAlertIncidentId(d.id); }
-        } catch { /* non-critical */ }
+          if (res.ok) {
+            const d = await res.json();
+            setAlertIncidentId(d.id);
+          }
+        } catch {
+          /* non-critical */
+        }
       }
       if (msg.type === "sos_alert" && msg.event_id) {
-        addEvent("sos", "SOS gesture triggered — manual emergency alert", msg.timestamp);
+        addEvent(
+          "sos",
+          "SOS gesture triggered — manual emergency",
+          msg.timestamp,
+        );
         setSystemState("SOS");
-        setActiveAlert({ eventId: msg.event_id, type: "sos", timestamp: msg.timestamp });
+        setActiveAlert({
+          eventId: msg.event_id,
+          type: "sos",
+          timestamp: msg.timestamp,
+        });
         setIncidentStatus("UNACKNOWLEDGED");
         setAlertIncidentId(null);
         try {
           const res = await fetch("/api/incidents", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ eventId: msg.event_id, type: "SOS", personId: 0, ar: 0, downDuration: 0 }),
+            body: JSON.stringify({
+              eventId: msg.event_id,
+              type: "SOS",
+              personId: 0,
+              ar: 0,
+              downDuration: 0,
+            }),
           });
-          if (res.ok) { const d = await res.json(); setAlertIncidentId(d.id); }
-        } catch { /* non-critical */ }
+          if (res.ok) {
+            const d = await res.json();
+            setAlertIncidentId(d.id);
+          }
+        } catch {
+          /* non-critical */
+        }
       }
       if (msg.type === "recovery") {
-        addEvent("recovery", `Recovery — Person ${msg.person_id ?? 0} stood up`, msg.timestamp);
+        addEvent(
+          "recovery",
+          `Person ${msg.person_id ?? 0} recovered`,
+          msg.timestamp,
+        );
         setSystemState("STABLE");
       }
       if (msg.type === "voice_alert" && msg.message) {
-        addEvent("voice", `Voice: "${msg.message}"`, msg.timestamp);
+        addEvent("voice", `"${msg.message}"`, msg.timestamp);
         setVoiceLog((prev) => [msg.message!, ...prev.slice(0, 19)]);
       }
     },
-    [addEvent]
+    [addEvent],
   );
 
   const { status: wsStatus, send } = useWebSocket(handleMessage);
@@ -101,184 +156,231 @@ export default function ResponderDashboardClient({ userId, userName }: Props) {
     if (!activeAlert) return;
     send({ type: "acknowledge", event_id: activeAlert.eventId });
     setIncidentStatus("ACKNOWLEDGED");
-    addEvent("ack", `Acknowledged alert ${activeAlert.eventId}`, Date.now() / 1000);
+    addEvent("ack", `Alert acknowledged`, Date.now() / 1000);
     if (alertIncidentId) {
       await fetch(`/api/incidents/${alertIncidentId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "ACKNOWLEDGED", acknowledgedBy: userId }),
+        body: JSON.stringify({
+          status: "ACKNOWLEDGED",
+          acknowledgedBy: userId,
+        }),
       });
     }
   }, [activeAlert, send, addEvent, alertIncidentId, userId]);
 
-  const updateStatus = useCallback(async (newStatus: IncidentStatus) => {
-    setIncidentStatus(newStatus);
-    if (alertIncidentId) {
-      await fetch(`/api/incidents/${alertIncidentId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
-      });
-    }
-    if (newStatus === "RESOLVED" || newStatus === "FALSE_ALARM") {
-      setTimeout(() => setActiveAlert(null), 1500);
-    }
-  }, [alertIncidentId]);
+  const updateStatus = useCallback(
+    async (newStatus: IncidentStatus) => {
+      setIncidentStatus(newStatus);
+      if (alertIncidentId) {
+        await fetch(`/api/incidents/${alertIncidentId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: newStatus }),
+        });
+      }
+      if (newStatus === "RESOLVED" || newStatus === "FALSE_ALARM")
+        setTimeout(() => setActiveAlert(null), 1000);
+    },
+    [alertIncidentId],
+  );
 
-  const isAlerting  = activeAlert !== null;
-  const bannerColor = systemState === "ALARM" ? "#ff3355" : systemState === "SOS" ? "#ffaa00" : "#00ff88";
-
-  const wsIcon = wsStatus === "connected"
-    ? <><Wifi size={14} className="text-[#00ff88]" /><span className="text-[#00ff88]">Connected</span></>
-    : wsStatus === "connecting"
-    ? <><Activity size={14} className="text-[#ffaa00]" /><span className="text-[#ffaa00]">Connecting...</span></>
-    : <><WifiOff size={14} className="text-[#ff3355]" /><span className="text-[#ff3355]">Offline</span></>;
+  const isAlarming = activeAlert !== null;
+  const isFall = activeAlert?.type === "fall";
+  const alertColor = isFall ? "#ff3355" : "#ffaa00";
 
   return (
-    <div className="max-w-[1400px] mx-auto">
-      {/* Top status banner — dynamic border/bg color */}
-      <div
-        className="rounded-lg px-4 py-3 mb-4 flex items-center justify-between flex-wrap gap-2 border"
-        style={{
-          background: isAlerting ? `${bannerColor}15` : "#111318",
-          borderColor: isAlerting ? bannerColor : "#1e2229",
-        }}
-      >
-        <div className="flex items-center gap-3">
-          <StatusBadge status={systemState === "SOS" ? "SOS" : systemState} size="md" pulse={isAlerting} />
-          <span className="text-[#c8d0e0] text-sm">
-            {isAlerting
-              ? activeAlert?.type === "fall"
-                ? `Fall detected — Person ${activeAlert.personId}`
-                : "SOS gesture — Manual emergency alert"
-              : "System monitoring — all clear"}
+    <div className='max-w-full mx-auto flex flex-col gap-3'>
+      {/* Top bar: connection + system state */}
+      <div className='flex items-center justify-between px-3 py-2 bg-[#111318] border border-[#1e2229] rounded'>
+        <div className='flex items-center gap-3'>
+          <StatusBadge
+            status={systemState === "SOS" ? "SOS" : systemState}
+            size='sm'
+            pulse={isAlarming}
+          />
+          <span className='text-xs text-[#4a5568]'>
+            {isAlarming
+              ? isFall
+                ? `Person ${activeAlert.personId} · AR ${activeAlert.ar?.toFixed(2)} · ${activeAlert.downDuration?.toFixed(1)}s on ground`
+                : "Manual SOS gesture detected"
+              : "Monitoring — all clear"}
           </span>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5 text-[#4a5568] text-[13px]">
-            <Users size={14} />
-            <span>{personsDetected} detected</span>
-          </div>
-          <div className="flex items-center gap-1.5 text-[13px]">{wsIcon}</div>
+        <div className='flex items-center gap-4 text-xs'>
+          <span className='flex items-center gap-1 text-[#4a5568]'>
+            <Users size={12} />
+            <span className='font-mono'>{personsDetected}</span>
+          </span>
+          {wsStatus === "connected" && (
+            <span className='flex items-center gap-1 text-[#00ff88]'>
+              <Wifi size={12} />
+              Connected
+            </span>
+          )}
+          {wsStatus === "connecting" && (
+            <span className='flex items-center gap-1 text-[#ffaa00]'>
+              <Activity size={12} />
+              Connecting…
+            </span>
+          )}
+          {wsStatus === "disconnected" && (
+            <span className='flex items-center gap-1 text-[#ff3355]'>
+              <WifiOff size={12} />
+              Offline
+            </span>
+          )}
         </div>
       </div>
 
-      {/* Main grid */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 340px" }}>
-        {/* Left col */}
-        <div className="flex flex-col gap-4">
-          {/* Feed */}
-          <div className="bg-[#111318] border border-[#1e2229] rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Activity size={16} className="text-[#4a5568]" />
-              <span className="text-sm font-semibold text-[#c8d0e0]">Live Feed</span>
-            </div>
+      {/* Main layout */}
+      <div className='grid gap-3' style={{ gridTemplateColumns: "1fr 300px" }}>
+        {/* Left: feed + bottom row */}
+        <div className='flex flex-col gap-3'>
+          <div className='bg-[#111318] border border-[#1e2229] rounded p-3'>
             <LiveFeed online={wsStatus === "connected"} />
           </div>
 
-          {/* Voice + Chat */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className='grid grid-cols-2 gap-3'>
             <VoiceLog entries={voiceLog} />
             <ChatPanel />
           </div>
 
-          {/* Event log */}
-          <div className="bg-[#111318] border border-[#1e2229] rounded-lg p-4">
-            <p className="text-sm font-semibold text-[#c8d0e0] mb-3">Event Log</p>
-            <EventLog entries={eventLog} maxHeight="180px" />
+          <div className='bg-[#111318] border border-[#1e2229] rounded p-3'>
+            <p className='section-label mb-2'>Event Log</p>
+            <EventLog entries={eventLog} maxHeight='160px' />
           </div>
         </div>
 
-        {/* Right col — alert panel */}
-        <div className="flex flex-col gap-4">
-          {/* Alert card */}
+        {/* Right: alert panel */}
+        <div className='flex flex-col gap-3'>
+          {/* Alert state card */}
           <div
-            className="bg-[#111318] rounded-lg p-4 shrink-0 border"
-            style={{ borderColor: isAlerting ? `${bannerColor}55` : "#1e2229" }}
+            className='rounded border flex-1 p-4 flex flex-col gap-4'
+            style={{
+              background: isAlarming ? `${alertColor}0a` : "#111318",
+              borderColor: isAlarming ? `${alertColor}40` : "#1e2229",
+            }}
           >
-            <p className="text-sm font-semibold text-[#c8d0e0] mb-3">Alert Panel</p>
-
-            {!isAlerting ? (
-              <div className="text-center py-8 text-[#4a5568]">
-                <CheckCircle size={32} className="mx-auto mb-2" />
-                <p className="text-sm">No active alerts</p>
+            {!isAlarming ? (
+              /* Calm state */
+              <div className='flex flex-col items-center justify-center gap-2 py-8 text-[#4a5568]'>
+                <CheckCircle size={28} />
+                <p className='text-sm font-medium'>No active alerts</p>
+                <p className='section-label'>system monitoring</p>
               </div>
             ) : (
-              <div className="flex flex-col gap-3">
-                {/* Alert type row */}
-                <div
-                  className="flex items-center gap-2.5 px-3 py-3 rounded border"
-                  style={{
-                    background: `${bannerColor}12`,
-                    borderColor: `${bannerColor}33`,
-                  }}
-                >
-                  {activeAlert.type === "fall"
-                    ? <AlertTriangle size={20} className="text-[#ff3355]" />
-                    : <Hand size={20} className="text-[#ffaa00]" />
-                  }
-                  <div>
-                    <p className="font-bold text-[15px]" style={{ color: bannerColor }}>
-                      {activeAlert.type === "fall" ? "FALL DETECTED" : "SOS ALERT"}
-                    </p>
-                    {activeAlert.type === "fall" && (
-                      <p className="text-[12px] text-[#4a5568]">
-                        Person {activeAlert.personId} · AR {activeAlert.ar?.toFixed(2)} · {activeAlert.downDuration?.toFixed(1)}s
-                      </p>
-                    )}
-                  </div>
+              /* Alert state */
+              <div className='flex flex-col gap-4'>
+                {/* Alert headline */}
+                <div>
+                  <p
+                    className='section-label mb-1'
+                    style={{ color: alertColor }}
+                  >
+                    {isFall ? "fall detected" : "sos alert"}
+                  </p>
+                  <p className='text-2xl font-bold text-[#c9d1e0] leading-tight'>
+                    {isFall ? `Person ${activeAlert.personId}` : "Manual SOS"}
+                  </p>
+                  {isFall && (
+                    <div className='flex items-center gap-3 mt-1'>
+                      <span className='font-mono text-xs text-[#4a5568]'>
+                        AR{" "}
+                        <span className='text-[#c9d1e0]'>
+                          {activeAlert.ar?.toFixed(2)}
+                        </span>
+                      </span>
+                      <span className='font-mono text-xs text-[#4a5568]'>
+                        DOWN{" "}
+                        <span className='text-[#c9d1e0]'>
+                          {activeAlert.downDuration?.toFixed(1)}s
+                        </span>
+                      </span>
+                    </div>
+                  )}
                 </div>
 
+                {/* Divider */}
+                <div className='h-px bg-[#1e2229]' />
+
+                {/* Countdown + ACK */}
                 {incidentStatus === "UNACKNOWLEDGED" && (
-                  <CountdownBar seconds={15} color={bannerColor} />
+                  <>
+                    <CountdownBar seconds={15} color={alertColor} />
+                    <button
+                      onClick={acknowledge}
+                      className='w-full py-3 rounded font-semibold text-sm border-none cursor-pointer transition-opacity hover:opacity-90 active:opacity-75'
+                      style={{ background: alertColor, color: "#0a0c10" }}
+                    >
+                      Acknowledge
+                    </button>
+                  </>
                 )}
 
-                {incidentStatus === "UNACKNOWLEDGED" && (
-                  <button
-                    onClick={acknowledge}
-                    className="w-full rounded-lg py-3 font-bold text-[15px] text-[#0a0c10] cursor-pointer border-none"
-                    style={{ background: bannerColor }}
-                  >
-                    ACKNOWLEDGE
-                  </button>
-                )}
-
+                {/* Status flow */}
                 {incidentStatus !== "UNACKNOWLEDGED" && (
-                  <div className="flex flex-col gap-1.5">
-                    <StatusBadge status={incidentStatus} size="md" />
-                    <p className="text-[12px] text-[#4a5568] mt-1">Update status:</p>
-                    {incidentStatus === "ACKNOWLEDGED" && (
-                      <StatusBtn label="RESPONDING" color="#ffaa00" onClick={() => updateStatus("RESPONDING")} />
-                    )}
-                    {incidentStatus === "RESPONDING" && (
-                      <StatusBtn label="ON SCENE" color="#8b5cf6" onClick={() => updateStatus("ON_SCENE")} />
-                    )}
-                    {(incidentStatus === "ON_SCENE" || incidentStatus === "RESPONDING") && (
-                      <>
-                        <StatusBtn label="RESOLVED"    color="#00ff88" onClick={() => updateStatus("RESOLVED")}    />
-                        <StatusBtn label="FALSE ALARM" color="#4a5568" onClick={() => updateStatus("FALSE_ALARM")} />
-                      </>
-                    )}
-                    {(incidentStatus === "RESOLVED" || incidentStatus === "FALSE_ALARM") && (
-                      <div className="flex items-center gap-1.5 text-[#00ff88] text-sm">
-                        <CheckCircle size={16} />
-                        <span>Incident closed</span>
-                      </div>
-                    )}
+                  <div className='flex flex-col gap-2'>
+                    <StatusBadge status={incidentStatus} size='md' />
+                    <div className='flex flex-col gap-1 mt-1'>
+                      {incidentStatus === "ACKNOWLEDGED" && (
+                        <FlowBtn
+                          label='Responding'
+                          color='#ffaa00'
+                          onClick={() => updateStatus("RESPONDING")}
+                        />
+                      )}
+                      {incidentStatus === "RESPONDING" && (
+                        <FlowBtn
+                          label='On Scene'
+                          color='#8b5cf6'
+                          onClick={() => updateStatus("ON_SCENE")}
+                        />
+                      )}
+                      {(incidentStatus === "ON_SCENE" ||
+                        incidentStatus === "RESPONDING") && (
+                        <>
+                          <FlowBtn
+                            label='Resolved'
+                            color='#00ff88'
+                            onClick={() => updateStatus("RESOLVED")}
+                          />
+                          <FlowBtn
+                            label='False Alarm'
+                            color='#4a5568'
+                            onClick={() => updateStatus("FALSE_ALARM")}
+                          />
+                        </>
+                      )}
+                      {(incidentStatus === "RESOLVED" ||
+                        incidentStatus === "FALSE_ALARM") && (
+                        <div className='flex items-center gap-1.5 text-xs text-[#00ff88] pt-1'>
+                          <CheckCircle size={13} /> Incident closed
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
             )}
           </div>
 
-          {/* System info */}
-          <div className="bg-[#111318] border border-[#1e2229] rounded-lg p-4">
-            <p className="text-[13px] font-semibold text-[#c8d0e0] mb-3">System</p>
-            <div className="flex flex-col gap-2">
-              <InfoRow label="WebSocket"   value={wsStatus}                     color={wsStatus === "connected" ? "#00ff88" : "#ff3355"} />
-              <InfoRow label="Camera feed" value="http://localhost:8765/video"  color="#4a5568" mono />
-              <InfoRow label="Persons"     value={String(personsDetected)}      color="#c8d0e0" />
-              <InfoRow label="Responder"   value={userName}                     color="#3b82f6" />
+          {/* System info strip */}
+          <div className='bg-[#111318] border border-[#1e2229] rounded p-3'>
+            <div className='flex flex-col gap-1.5'>
+              <InfoRow
+                label='WS'
+                value={wsStatus}
+                mono
+                color={wsStatus === "connected" ? "#00ff88" : "#ff3355"}
+              />
+              <InfoRow
+                label='Persons'
+                value={String(personsDetected)}
+                mono
+                color='#c9d1e0'
+              />
+              <InfoRow label='User' value={userName} color='#4a5568' />
             </div>
           </div>
         </div>
@@ -287,29 +389,47 @@ export default function ResponderDashboardClient({ userId, userName }: Props) {
   );
 }
 
-function StatusBtn({ label, color, onClick }: { label: string; color: string; onClick: () => void }) {
+function FlowBtn({
+  label,
+  color,
+  onClick,
+}: {
+  label: string;
+  color: string;
+  onClick: () => void;
+}) {
   return (
     <button
       onClick={onClick}
-      className="w-full bg-transparent rounded px-3 py-2 font-semibold text-[13px] font-mono cursor-pointer flex items-center justify-between transition-colors border"
-      style={{ color, borderColor: `${color}55` }}
-      onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = `${color}15`; }}
-      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+      className='w-full bg-transparent rounded px-3 py-2 text-xs font-medium cursor-pointer flex items-center justify-between transition-colors border'
+      style={{ color, borderColor: `${color}30` }}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.background = `${color}10`;
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+      }}
     >
-      {label}
-      <ChevronRight size={14} />
+      {label} <ChevronRight size={12} />
     </button>
   );
 }
 
-function InfoRow({ label, value, color, mono }: { label: string; value: string; color: string; mono?: boolean }) {
+function InfoRow({
+  label,
+  value,
+  color,
+  mono,
+}: {
+  label: string;
+  value: string;
+  color: string;
+  mono?: boolean;
+}) {
   return (
-    <div className="flex items-center justify-between text-[12px]">
-      <span className="text-[#4a5568]">{label}</span>
-      <span
-        className={`max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap ${mono ? "font-mono" : ""}`}
-        style={{ color }}
-      >
+    <div className='flex items-center justify-between text-xs'>
+      <span className='text-[#4a5568]'>{label}</span>
+      <span className={`${mono ? "font-mono" : ""}`} style={{ color }}>
         {value}
       </span>
     </div>

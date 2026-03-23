@@ -13,51 +13,56 @@ export default function ResponderNav({ user }: Props) {
   const path = usePathname();
 
   const links = [
-    { href: "/responder/dashboard", icon: <LayoutDashboard size={16} />, label: "Dashboard" },
-    { href: "/responder/incidents",  icon: <FileText size={16} />,       label: "Incidents"  },
-    { href: "/responder/profile",    icon: <User size={16} />,           label: "Profile"    },
+    {
+      href: "/responder/dashboard",
+      icon: <LayoutDashboard size={14} />,
+      label: "Dashboard",
+    },
+    {
+      href: "/responder/incidents",
+      icon: <FileText size={14} />,
+      label: "Incidents",
+    },
+    { href: "/responder/profile", icon: <User size={14} />, label: "Profile" },
   ];
 
   return (
-    <header className="bg-[#111318] border-b border-[#1e2229] px-4 h-[52px] flex items-center justify-between shrink-0">
-      {/* Logo */}
-      <div className="flex items-center gap-2">
-        <Shield size={20} className="text-[#00ff88]" />
-        <span className="font-mono font-bold text-[15px] text-[#c8d0e0] tracking-wide">GUARDIAN</span>
+    <header className='bg-[#111318] border-b border-[#1e2229] px-4 h-11 flex items-center justify-between shrink-0'>
+      <div className='flex items-center gap-2'>
+        <Shield size={16} className='text-[#00ff88]' />
+        <span className='font-semibold text-sm text-[#c9d1e0] tracking-wide'>
+          GUARDIAN
+        </span>
+        <span className='section-label ml-1 text-[#2a3040]'>/ RESPONDER</span>
       </div>
 
-      {/* Nav links */}
-      <nav className="flex items-center gap-1">
+      <nav className='flex items-center gap-0.5'>
         {links.map((l) => {
           const active = path === l.href;
           return (
             <Link
               key={l.href}
               href={l.href}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-[13px] transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
                 active
-                  ? "bg-[#1e2229] text-[#c8d0e0]"
-                  : "text-[#4a5568] hover:text-[#c8d0e0]"
+                  ? "bg-[#1e2229] text-[#c9d1e0]"
+                  : "text-[#4a5568] hover:text-[#c9d1e0]"
               }`}
             >
               {l.icon}
-              <span className="hidden sm:inline">{l.label}</span>
+              <span className='hidden sm:inline'>{l.label}</span>
             </Link>
           );
         })}
       </nav>
 
-      {/* User + signout */}
-      <div className="flex items-center gap-3">
-        <div className="hidden sm:block text-right">
-          <p className="text-[13px] text-[#c8d0e0] font-medium">{user.name}</p>
-          <p className="text-[11px] text-[#4a5568]">Responder</p>
-        </div>
+      <div className='flex items-center gap-2'>
+        <span className='hidden sm:block text-xs text-[#4a5568]'>Log out</span>
         <button
           onClick={() => signOut({ callbackUrl: "/login" })}
-          className="flex items-center gap-1.5 border border-[#1e2229] rounded px-2.5 py-1.5 text-[#4a5568] hover:text-[#c8d0e0] hover:border-[#2a3040] cursor-pointer bg-transparent transition-colors text-[13px]"
+          className='flex items-center gap-1 border border-[#1e2229] rounded px-2 py-1 text-[#4a5568] hover:text-[#c9d1e0] hover:border-[#2a3040] bg-transparent cursor-pointer transition-colors'
         >
-          <LogOut size={14} />
+          <LogOut size={13} />
         </button>
       </div>
     </header>

@@ -19,21 +19,21 @@ export default async function ProfilePage() {
   ];
 
   return (
-    <div className="max-w-[480px] mx-auto flex flex-col gap-6">
-      <h1 className="text-xl font-bold text-[#c8d0e0]">My Profile</h1>
+    <div className="max-w-[480px] mx-auto flex flex-col gap-4">
+      <h1 className="text-base font-semibold text-[#c9d1e0]">My Profile</h1>
 
-      <div className="bg-[#111318] border border-[#1e2229] rounded-lg p-6">
-        <div className="flex flex-col gap-4">
+      <div className="bg-[#111318] border border-[#1e2229] rounded p-4">
+        <div className="flex flex-col gap-3">
           {fields.map(([label, val]) => (
             <div key={label}>
-              <p className="text-[11px] text-[#4a5568] mb-1">{label}</p>
-              <p className="text-[15px] text-[#c8d0e0]">{val}</p>
+              <p className="section-label mb-0.5">{label}</p>
+              <p className="text-sm text-[#c9d1e0]">{val}</p>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="bg-[#3b82f6]/[0.06] border border-[#3b82f6]/15 rounded-lg p-4 text-sm text-[#4a5568]">
+      <div className="bg-[#3b82f6]/06 border border-[#3b82f6]/15 rounded p-3 text-xs text-[#4a5568]">
         To update your profile or reset your password, contact your system administrator.
       </div>
     </div>

@@ -44,11 +44,11 @@ export default function AdminIncidentsClient() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-[#c8d0e0]">Incident History</h1>
-          <p className="text-sm text-[#4a5568]">{incidents.length} incidents</p>
+          <h1 className="text-base font-semibold text-[#c9d1e0]">Incident History</h1>
+          <p className="section-label mt-0.5">{incidents.length} incidents</p>
         </div>
         <div className="flex items-center gap-2">
-          <Filter size={14} className="text-[#4a5568]" />
+          <Filter size={12} className="text-[#4a5568]" />
           <select value={typeFilter}   onChange={(e) => setTypeFilter(e.target.value)}   className={selectCls}>
             <option value="">All Types</option>
             <option value="FALL">Fall</option>
@@ -66,13 +66,13 @@ export default function AdminIncidentsClient() {
         </div>
       </div>
 
-      <div className="bg-[#111318] border border-[#1e2229] rounded-lg overflow-hidden">
+      <div className="bg-[#111318] border border-[#1e2229] rounded overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[13px]">
+          <table className="w-full border-collapse text-xs">
             <thead>
               <tr className="border-b border-[#1e2229]">
                 {["Time", "Type", "Person", "Duration", "AR", "Responder", "Response", "Status", ""].map((h) => (
-                  <th key={h} className="py-3 px-3 text-left text-[#4a5568] font-medium whitespace-nowrap">{h}</th>
+                  <th key={h} className="py-2.5 px-3 text-left section-label whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -84,15 +84,15 @@ export default function AdminIncidentsClient() {
               ) : (
                 incidents.map((inc) => (
                   <tr key={inc.id} className="border-b border-[#1e2229]">
-                    <td className="py-2.5 px-3 text-[#4a5568] font-mono text-[12px] whitespace-nowrap">
+                    <td className="py-2.5 px-3 text-[#4a5568] font-mono whitespace-nowrap">
                       {new Date(inc.createdAt).toLocaleString()}
                     </td>
                     <td className="py-2.5 px-3"><StatusBadge status={inc.type} /></td>
-                    <td className="py-2.5 px-3 text-[#c8d0e0]">#{inc.personId}</td>
-                    <td className="py-2.5 px-3 text-[#c8d0e0]">{inc.downDuration.toFixed(1)}s</td>
-                    <td className="py-2.5 px-3 text-[#c8d0e0] font-mono">{inc.ar.toFixed(2)}</td>
-                    <td className="py-2.5 px-3 text-[#c8d0e0]">{inc.user?.name ?? "—"}</td>
-                    <td className="py-2.5 px-3 text-[#c8d0e0] font-mono">{responseTime(inc)}</td>
+                    <td className="py-2.5 px-3 text-[#c9d1e0] font-mono">#{inc.personId}</td>
+                    <td className="py-2.5 px-3 text-[#c9d1e0] font-mono">{inc.downDuration.toFixed(1)}s</td>
+                    <td className="py-2.5 px-3 text-[#c9d1e0] font-mono">{inc.ar.toFixed(2)}</td>
+                    <td className="py-2.5 px-3 text-[#c9d1e0]">{inc.user?.name ?? "—"}</td>
+                    <td className="py-2.5 px-3 text-[#c9d1e0] font-mono">{responseTime(inc)}</td>
                     <td className="py-2.5 px-3"><StatusBadge status={inc.status} /></td>
                     <td className="py-2.5 px-3">
                       <Link href={`/admin/incidents/${inc.id}`} className="text-[#3b82f6] flex items-center hover:text-[#60a5fa]">

@@ -14,8 +14,8 @@ interface UserRow {
   createdAt: string;
 }
 
-const inputCls = "w-full bg-[#0a0c10] border border-[#1e2229] rounded px-3 py-2 text-[#c8d0e0] text-sm outline-none focus:border-[#3b82f6] transition-colors";
-const labelCls = "block text-[12px] text-[#4a5568] mb-1 font-medium";
+const inputCls = "w-full bg-[#0a0c10] border border-[#1e2229] rounded px-3 py-2 text-[#c9d1e0] text-xs outline-none focus:border-[#3b82f6] transition-colors";
+const labelCls = "section-label mb-1.5 block";
 
 export default function AdminUsersClient() {
   const [users, setUsers]       = useState<UserRow[]>([]);
@@ -82,24 +82,24 @@ export default function AdminUsersClient() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-[#c8d0e0]">User Management</h1>
-          <p className="text-sm text-[#4a5568]">{users.length} accounts</p>
+          <h1 className="text-base font-semibold text-[#c9d1e0]">User Management</h1>
+          <p className="section-label mt-0.5">{users.length} accounts</p>
         </div>
         <button
           onClick={openCreate}
-          className="flex items-center gap-2 bg-[#3b82f6] hover:bg-[#2563eb] border-none rounded-lg px-4 py-2.5 text-white font-semibold text-sm cursor-pointer transition-colors"
+          className="flex items-center gap-1.5 bg-[#3b82f6] hover:bg-[#2563eb] border-none rounded px-3 py-2 text-white font-semibold text-xs cursor-pointer transition-colors"
         >
-          <UserPlus size={16} /> Add Responder
+          <UserPlus size={13} /> Add Responder
         </button>
       </div>
 
-      <div className="bg-[#111318] border border-[#1e2229] rounded-lg overflow-hidden">
+      <div className="bg-[#111318] border border-[#1e2229] rounded overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
+          <table className="w-full border-collapse text-xs">
             <thead>
               <tr className="border-b border-[#1e2229]">
                 {["Name", "Email", "Role", "Status", "Joined", "Actions"].map((h) => (
-                  <th key={h} className="py-3 px-4 text-left text-[#4a5568] font-medium">{h}</th>
+                  <th key={h} className="py-2.5 px-3 text-left section-label">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -111,12 +111,12 @@ export default function AdminUsersClient() {
               ) : (
                 users.map((u) => (
                   <tr key={u.id} className="border-b border-[#1e2229]">
-                    <td className="py-3 px-4 text-[#c8d0e0] font-medium">{u.name}</td>
-                    <td className="py-3 px-4 text-[#4a5568]">{u.email}</td>
-                    <td className="py-3 px-4"><StatusBadge status={u.role} /></td>
-                    <td className="py-3 px-4"><StatusBadge status={u.isActive ? "ONLINE" : "OFFLINE"} /></td>
-                    <td className="py-3 px-4 text-[#4a5568] text-[12px] font-mono">{new Date(u.createdAt).toLocaleDateString()}</td>
-                    <td className="py-3 px-4">
+                    <td className="py-2.5 px-3 text-[#c9d1e0] font-medium">{u.name}</td>
+                    <td className="py-2.5 px-3 text-[#4a5568]">{u.email}</td>
+                    <td className="py-2.5 px-3"><StatusBadge status={u.role} /></td>
+                    <td className="py-2.5 px-3"><StatusBadge status={u.isActive ? "ONLINE" : "OFFLINE"} /></td>
+                    <td className="py-2.5 px-3 text-[#4a5568] font-mono">{new Date(u.createdAt).toLocaleDateString()}</td>
+                    <td className="py-2.5 px-3">
                       <div className="flex gap-1.5">
                         <IconBtn icon={<Pencil size={13} />} onClick={() => openEdit(u)} title="Edit" />
                         <IconBtn
@@ -143,16 +143,16 @@ export default function AdminUsersClient() {
           className="fixed inset-0 bg-black/70 flex items-center justify-center z-50"
           onClick={(e) => e.target === e.currentTarget && setShowModal(false)}
         >
-          <div className="bg-[#111318] border border-[#1e2229] rounded-xl p-6 w-full max-w-md">
-            <h2 className="font-bold text-[#c8d0e0] mb-5">{editUser ? "Edit User" : "Add Responder"}</h2>
+          <div className="bg-[#111318] border border-[#1e2229] rounded p-5 w-full max-w-md">
+            <h2 className="text-sm font-semibold text-[#c9d1e0] mb-4">{editUser ? "Edit User" : "Add Responder"}</h2>
 
             {error && (
-              <div className="bg-[#ff3355]/10 border border-[#ff3355]/30 rounded px-3 py-2 mb-4 text-[#ff3355] text-sm">
+              <div className="bg-[#ff3355]/08 border border-[#ff3355]/20 rounded px-3 py-2 mb-4 text-[#ff3355] text-xs">
                 {error}
               </div>
             )}
 
-            <div className="flex flex-col gap-3.5">
+            <div className="flex flex-col gap-3">
               <div>
                 <label className={labelCls}>Name</label>
                 <input type="text"  className={inputCls} value={form.name}     onChange={f("name")}     />
@@ -178,17 +178,17 @@ export default function AdminUsersClient() {
               </div>
             </div>
 
-            <div className="flex gap-3 mt-6">
+            <div className="flex gap-2 mt-5">
               <button
                 onClick={() => setShowModal(false)}
-                className="flex-1 bg-[#1e2229] border-none rounded-lg py-2.5 text-[#4a5568] cursor-pointer text-sm hover:text-[#c8d0e0] transition-colors"
+                className="flex-1 bg-[#1e2229] border-none rounded py-2 text-[#4a5568] cursor-pointer text-xs hover:text-[#c9d1e0] transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={save}
                 disabled={saving}
-                className="flex-1 bg-[#3b82f6] hover:bg-[#2563eb] border-none rounded-lg py-2.5 text-white cursor-pointer font-semibold text-sm disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                className="flex-1 bg-[#3b82f6] hover:bg-[#2563eb] border-none rounded py-2 text-white cursor-pointer font-semibold text-xs disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
               >
                 {saving ? "Saving..." : "Save"}
               </button>
