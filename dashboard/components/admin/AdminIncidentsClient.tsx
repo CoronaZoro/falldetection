@@ -6,24 +6,17 @@ import StatusBadge from "@/components/StatusBadge";
 import { Filter, ExternalLink } from "lucide-react";
 
 interface IncidentRow {
-  id: string;
-  eventId: string;
-  type: string;
-  status: string;
-  personId: number;
-  ar: number;
-  downDuration: number;
-  createdAt: string;
-  acknowledgedAt: string | null;
-  resolvedAt: string | null;
+  id: string; eventId: string; type: string; status: string;
+  personId: number; ar: number; downDuration: number;
+  createdAt: string; acknowledgedAt: string | null; resolvedAt: string | null;
   user?: { name: string } | null;
 }
 
-const selectCls = "bg-[#0a0c10] border border-[#1e2229] rounded px-2.5 py-1.5 text-[#c8d0e0] text-sm outline-none focus:border-[#3b82f6] transition-colors";
+const selectCls = "bg-page border border-line rounded px-2.5 py-1.5 text-fg text-sm outline-none focus:border-info transition-colors";
 
 export default function AdminIncidentsClient() {
-  const [incidents, setIncidents] = useState<IncidentRow[]>([]);
-  const [loading, setLoading]     = useState(true);
+  const [incidents, setIncidents]       = useState<IncidentRow[]>([]);
+  const [loading, setLoading]           = useState(true);
   const [typeFilter, setTypeFilter]     = useState("");
   const [statusFilter, setStatusFilter] = useState("");
 
@@ -41,61 +34,61 @@ export default function AdminIncidentsClient() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+    <div className='flex flex-col gap-6'>
+      <div className='flex items-center justify-between flex-wrap gap-3'>
         <div>
-          <h1 className="text-base font-semibold text-[#c9d1e0]">Incident History</h1>
-          <p className="section-label mt-0.5">{incidents.length} incidents</p>
+          <h1 className='text-base font-semibold text-fg'>Incident History</h1>
+          <p className='section-label mt-0.5'>{incidents.length} incidents</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Filter size={12} className="text-[#4a5568]" />
+        <div className='flex items-center gap-2'>
+          <Filter size={12} className='text-fg-muted' />
           <select value={typeFilter}   onChange={(e) => setTypeFilter(e.target.value)}   className={selectCls}>
-            <option value="">All Types</option>
-            <option value="FALL">Fall</option>
-            <option value="SOS">SOS</option>
+            <option value=''>All Types</option>
+            <option value='FALL'>Fall</option>
+            <option value='SOS'>SOS</option>
           </select>
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={selectCls}>
-            <option value="">All Statuses</option>
-            <option value="UNACKNOWLEDGED">Unacknowledged</option>
-            <option value="ACKNOWLEDGED">Acknowledged</option>
-            <option value="RESPONDING">Responding</option>
-            <option value="ON_SCENE">On Scene</option>
-            <option value="RESOLVED">Resolved</option>
-            <option value="FALSE_ALARM">False Alarm</option>
+            <option value=''>All Statuses</option>
+            <option value='UNACKNOWLEDGED'>Unacknowledged</option>
+            <option value='ACKNOWLEDGED'>Acknowledged</option>
+            <option value='RESPONDING'>Responding</option>
+            <option value='ON_SCENE'>On Scene</option>
+            <option value='RESOLVED'>Resolved</option>
+            <option value='FALSE_ALARM'>False Alarm</option>
           </select>
         </div>
       </div>
 
-      <div className="bg-[#111318] border border-[#1e2229] rounded overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-xs">
+      <div className='bg-surface border border-line rounded overflow-hidden'>
+        <div className='overflow-x-auto'>
+          <table className='w-full border-collapse text-xs'>
             <thead>
-              <tr className="border-b border-[#1e2229]">
+              <tr className='border-b border-line'>
                 {["Time", "Type", "Person", "Duration", "AR", "Responder", "Response", "Status", ""].map((h) => (
-                  <th key={h} className="py-2.5 px-3 text-left section-label whitespace-nowrap">{h}</th>
+                  <th key={h} className='py-2.5 px-3 text-left section-label whitespace-nowrap'>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={9} className="py-8 text-center text-[#4a5568]">Loading...</td></tr>
+                <tr><td colSpan={9} className='py-8 text-center text-fg-muted'>Loading...</td></tr>
               ) : incidents.length === 0 ? (
-                <tr><td colSpan={9} className="py-8 text-center text-[#4a5568]">No incidents found</td></tr>
+                <tr><td colSpan={9} className='py-8 text-center text-fg-muted'>No incidents found</td></tr>
               ) : (
                 incidents.map((inc) => (
-                  <tr key={inc.id} className="border-b border-[#1e2229]">
-                    <td className="py-2.5 px-3 text-[#4a5568] font-mono whitespace-nowrap">
+                  <tr key={inc.id} className='border-b border-line'>
+                    <td className='py-2.5 px-3 text-fg-muted font-mono whitespace-nowrap'>
                       {new Date(inc.createdAt).toLocaleString()}
                     </td>
-                    <td className="py-2.5 px-3"><StatusBadge status={inc.type} /></td>
-                    <td className="py-2.5 px-3 text-[#c9d1e0] font-mono">#{inc.personId}</td>
-                    <td className="py-2.5 px-3 text-[#c9d1e0] font-mono">{inc.downDuration.toFixed(1)}s</td>
-                    <td className="py-2.5 px-3 text-[#c9d1e0] font-mono">{inc.ar.toFixed(2)}</td>
-                    <td className="py-2.5 px-3 text-[#c9d1e0]">{inc.user?.name ?? "—"}</td>
-                    <td className="py-2.5 px-3 text-[#c9d1e0] font-mono">{responseTime(inc)}</td>
-                    <td className="py-2.5 px-3"><StatusBadge status={inc.status} /></td>
-                    <td className="py-2.5 px-3">
-                      <Link href={`/admin/incidents/${inc.id}`} className="text-[#3b82f6] flex items-center hover:text-[#60a5fa]">
+                    <td className='py-2.5 px-3'><StatusBadge status={inc.type} /></td>
+                    <td className='py-2.5 px-3 text-fg font-mono'>#{inc.personId}</td>
+                    <td className='py-2.5 px-3 text-fg font-mono'>{inc.downDuration.toFixed(1)}s</td>
+                    <td className='py-2.5 px-3 text-fg font-mono'>{inc.ar.toFixed(2)}</td>
+                    <td className='py-2.5 px-3 text-fg'>{inc.user?.name ?? "—"}</td>
+                    <td className='py-2.5 px-3 text-fg font-mono'>{responseTime(inc)}</td>
+                    <td className='py-2.5 px-3'><StatusBadge status={inc.status} /></td>
+                    <td className='py-2.5 px-3'>
+                      <Link href={`/admin/incidents/${inc.id}`} className='text-info flex items-center hover:text-info-light'>
                         <ExternalLink size={13} />
                       </Link>
                     </td>

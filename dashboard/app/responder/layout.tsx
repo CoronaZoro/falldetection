@@ -11,14 +11,16 @@ export default async function ResponderLayout({
   if (!session || session.user.role !== "RESPONDER") redirect("/login");
 
   return (
-    <div className='min-h-screen bg-[#0a0c10] flex flex-col'>
+    <div className='h-screen bg-page flex flex-col overflow-hidden'>
       <ResponderNav
         user={{
           name: session.user.name ?? "Responder",
           email: session.user.email ?? "",
         }}
       />
-      <main className='flex-1 px-4 py-6'>{children}</main>
+      <main className='flex-1 min-h-0 overflow-hidden px-3 py-2'>
+        {children}
+      </main>
     </div>
   );
 }

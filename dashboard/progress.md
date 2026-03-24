@@ -131,31 +131,62 @@ npm run dev              # Start on port 3000
 ```
 
 ## Design System
-| Token | Value | Use |
-|-------|-------|-----|
-| Background | #0a0c10 | Page background |
-| Surface | #111318 | Cards, panels |
-| Border | #1e2229 | All borders |
-| Text | #c8d0e0 | Primary text |
-| Muted | #4a5568 | Secondary text, labels |
-| Green | #00ff88 | Online, stable, resolved |
-| Amber | #ffaa00 | Warning, SOS, transition |
-| Red | #ff3355 | Alarm, fall, error |
-| Blue | #3b82f6 | Actions, info |
-| Purple | #8b5cf6 | AI features |
+
+### Color Tokens (`lib/colors.ts` + `globals.css @theme`)
+All colors are defined in **one place**: `lib/colors.ts` exports JS constants; `globals.css @theme` defines matching Tailwind tokens. To change a color, edit both.
+
+| Token | Tailwind class | Value | Use |
+|-------|---------------|-------|-----|
+| page | `bg-page` | #0a0c10 | Page background |
+| surface | `bg-surface` | #111318 | Cards, panels |
+| elevated | `bg-elevated` | #161b24 | Modals, tooltips |
+| line | `border-line` | #1e2229 | All borders |
+| line-muted | `border-line-muted` | #2a3040 | Muted borders, placeholders |
+| fg | `text-fg` | #c9d1e0 | Primary text |
+| fg-muted | `text-fg-muted` | #4a5568 | Secondary text, labels |
+| danger | `text-danger` / `bg-danger` | #ff3355 | Fall alert, alarm, error |
+| warning | `text-warning` / `bg-warning` | #ffaa00 | SOS, transition, responding |
+| success | `text-success` / `bg-success` | #00ff88 | Stable, resolved, online |
+| info | `text-info` / `bg-info` | #3b82f6 | Primary actions, acknowledged |
+| info-dark | `bg-info-dark` | #2563eb | Info button hover |
+| info-light | `text-info-light` | #60a5fa | Link hover |
+| accent | `text-accent` / `bg-accent` | #8b5cf6 | On-scene, admin, AI chat |
+| accent-dark | `bg-accent-dark` | #7c3aed | Accent hover |
+
+JS-only uses (charts, StatusBadge CONFIG, dynamic inline styles):
+```ts
+import { colors, rgba } from "@/lib/colors";
+colors.danger          // "#ff3355"
+rgba(colors.danger, 0.1) // "rgba(255,51,85,0.1)"
+```
+
+## Responder Dashboard Layout
+```
+┌─ Status bar (h-9) ──────────────────────────────────────────────┐
+│ [STABLE badge] [context text]          [persons] [name] [conn]  │
+├─ Left column (50%) ──────────┬─ Right column (50%) ────────────┤
+│  Live feed (aspect-video)    │  Alert card (shrink-0, max 264px)│
+│                              │  ─ idle: compact "all clear"     │
+│  Event log (flex-1, scroll)  │  ─ alarm: headline+countdown+ack │
+│                              │                                  │
+│                              │  ChatPanel (flex-1, fills rest)  │
+│                              │  ─ first-class AI assistant      │
+└──────────────────────────────┴──────────────────────────────────┘
+Mobile: right col first (alert+chat), left col below (feed+log)
+```
 
 ## Known Limitations / TODO
 - Twilio escalation is DB-only (no actual SMS sending)
 - Camera page reuses detection settings (functional, not visual split)
 - ANTHROPIC_API_KEY must be real for chat/report features
+- VoiceLog component exists but is commented out (pending chatbot integration work)
 
 ## Styling Notes
-- All components use **Tailwind CSS v4 utility classes** — no React inline `style={}` props for layout/spacing/color
-- Only truly dynamic values (state-dependent colors/widths like alert banner border color, countdown bar width %) use inline `style={}` — everything static is Tailwind
-- Custom colors use Tailwind arbitrary value syntax: `bg-[#0a0c10]`, `text-[#c8d0e0]`, `border-[#1e2229]`
-- Opacity variants: `bg-[#ff3355]/10`, `border-[#3b82f6]/20`
+- **Color system**: All hardcoded hex values replaced with semantic Tailwind tokens (`text-danger`, `bg-surface`, `border-line`, etc.)
+- **Single source of truth**: `lib/colors.ts` for JS, `globals.css @theme` for CSS — edit one place to retheme
+- Only truly dynamic values (runtime alert color, countdown bar width) use inline `style={}`
 - **Font rules**: Inter (sans-serif) for all UI text; JetBrains Mono (`font-mono`) only for data values — AR numbers, timestamps, IDs, person counts
-- **`section-label` utility**: `10px, uppercase, tracking-wide, #4a5568` — used for all card headers, form labels, panel subtitles
-- **Page titles**: `text-base font-semibold text-[#c9d1e0]` — compact but legible
-- **Alert hierarchy**: alarm states use dynamic border + background tint from `alertColor`; calm states use flat `#111318` surface
-- Build verified: `npm run build` passes with 19 pages ✅ (after full UI cleanup)
+- **`section-label` utility**: `10px, uppercase, tracking-wide, fg-muted color` — used for all card headers, form labels, panel subtitles
+- **Alert hierarchy**: alarm card has `transition-colors duration-300` for smooth color shift; idle state is compact single-line strip
+- **Non-scrollable responder page**: `h-screen overflow-hidden` layout chain — `html > body > layout div > main > dashboard` all with proper `min-h-0` on flex children
+- Build verified: `npm run build` passes with 19 pages ✅

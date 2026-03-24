@@ -2,21 +2,26 @@
 
 import { Volume2 } from "lucide-react";
 
-interface Props { entries: string[] }
+interface Props {
+  entries: string[];
+}
 
 export default function VoiceLog({ entries }: Props) {
   return (
-    <div className="bg-[#111318] border border-[#1e2229] rounded p-3 flex flex-col gap-2.5">
-      <div className="flex items-center gap-2">
-        <Volume2 size={12} className="text-[#3b82f6]" />
-        <span className="section-label">Voice Log</span>
+    <div className='bg-surface border border-line rounded p-2.5 flex flex-col gap-1.5 h-full'>
+      <div className='flex items-center gap-1.5 shrink-0'>
+        <Volume2 size={11} className='text-info' />
+        <span className='section-label'>Voice Log</span>
       </div>
-      <div className="overflow-y-auto max-h-32 flex flex-col gap-1">
+      <div className='flex-1 min-h-0 overflow-y-auto flex flex-col gap-1'>
         {entries.length === 0 ? (
-          <p className="text-xs text-[#4a5568]">No voice alerts</p>
+          <p className='text-[11px] text-fg-muted'>No voice alerts</p>
         ) : (
           entries.map((msg, i) => (
-            <p key={i} className="text-xs text-[#c9d1e0] py-1 px-2 bg-[#3b82f6]/[0.05] border-l-2 border-[#3b82f6]/40 italic">
+            <p
+              key={i}
+              className='text-[11px] text-fg py-1 px-2 bg-info/5 border-l-2 border-info/40 italic leading-snug'
+            >
               &ldquo;{msg}&rdquo;
             </p>
           ))

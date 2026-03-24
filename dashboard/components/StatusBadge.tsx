@@ -1,117 +1,37 @@
 "use client";
 
+import { colors, rgba } from "@/lib/colors";
+
 const CONFIG: Record<
   string,
   { label: string; color: string; bg: string; border: string }
 > = {
-  STABLE: {
-    label: "STABLE",
-    color: "#00ff88",
-    bg: "rgba(0,255,136,0.08)",
-    border: "rgba(0,255,136,0.18)",
-  },
-  MONITORING: {
-    label: "MONITORING",
-    color: "#00ff88",
-    bg: "rgba(0,255,136,0.08)",
-    border: "rgba(0,255,136,0.18)",
-  },
-  TRANSITION: {
-    label: "TRANSITION",
-    color: "#ffaa00",
-    bg: "rgba(255,170,0,0.08)",
-    border: "rgba(255,170,0,0.2)",
-  },
-  VALIDATION: {
-    label: "VALIDATING",
-    color: "#ffaa00",
-    bg: "rgba(255,170,0,0.08)",
-    border: "rgba(255,170,0,0.2)",
-  },
-  ALARM: {
-    label: "ALARM",
-    color: "#ff3355",
-    bg: "rgba(255,51,85,0.1)",
-    border: "rgba(255,51,85,0.22)",
-  },
-  RECOVERY: {
-    label: "RECOVERY",
-    color: "#00ff88",
-    bg: "rgba(0,255,136,0.08)",
-    border: "rgba(0,255,136,0.18)",
-  },
-  UNACKNOWLEDGED: {
-    label: "UNACKNOWLEDGED",
-    color: "#ff3355",
-    bg: "rgba(255,51,85,0.1)",
-    border: "rgba(255,51,85,0.22)",
-  },
-  ACKNOWLEDGED: {
-    label: "ACKNOWLEDGED",
-    color: "#3b82f6",
-    bg: "rgba(59,130,246,0.08)",
-    border: "rgba(59,130,246,0.2)",
-  },
-  RESPONDING: {
-    label: "RESPONDING",
-    color: "#ffaa00",
-    bg: "rgba(255,170,0,0.08)",
-    border: "rgba(255,170,0,0.2)",
-  },
-  ON_SCENE: {
-    label: "ON SCENE",
-    color: "#8b5cf6",
-    bg: "rgba(139,92,246,0.08)",
-    border: "rgba(139,92,246,0.2)",
-  },
-  RESOLVED: {
-    label: "RESOLVED",
-    color: "#00ff88",
-    bg: "rgba(0,255,136,0.08)",
-    border: "rgba(0,255,136,0.18)",
-  },
-  FALSE_ALARM: {
-    label: "FALSE ALARM",
-    color: "#4a5568",
-    bg: "rgba(74,85,104,0.08)",
-    border: "rgba(74,85,104,0.2)",
-  },
-  ONLINE: {
-    label: "ONLINE",
-    color: "#00ff88",
-    bg: "rgba(0,255,136,0.08)",
-    border: "rgba(0,255,136,0.18)",
-  },
-  OFFLINE: {
-    label: "OFFLINE",
-    color: "#ff3355",
-    bg: "rgba(255,51,85,0.1)",
-    border: "rgba(255,51,85,0.22)",
-  },
-  FALL: {
-    label: "FALL",
-    color: "#ff3355",
-    bg: "rgba(255,51,85,0.1)",
-    border: "rgba(255,51,85,0.22)",
-  },
-  SOS: {
-    label: "SOS",
-    color: "#ffaa00",
-    bg: "rgba(255,170,0,0.08)",
-    border: "rgba(255,170,0,0.2)",
-  },
-  ADMIN: {
-    label: "ADMIN",
-    color: "#8b5cf6",
-    bg: "rgba(139,92,246,0.08)",
-    border: "rgba(139,92,246,0.2)",
-  },
-  RESPONDER: {
-    label: "RESPONDER",
-    color: "#3b82f6",
-    bg: "rgba(59,130,246,0.08)",
-    border: "rgba(59,130,246,0.2)",
-  },
+  STABLE:     { label: "STABLE",         color: colors.success,  bg: rgba(colors.success,  0.08), border: rgba(colors.success,  0.18) },
+  MONITORING: { label: "MONITORING",     color: colors.success,  bg: rgba(colors.success,  0.08), border: rgba(colors.success,  0.18) },
+  TRANSITION: { label: "TRANSITION",     color: colors.warning,  bg: rgba(colors.warning,  0.08), border: rgba(colors.warning,  0.20) },
+  VALIDATION: { label: "VALIDATING",     color: colors.warning,  bg: rgba(colors.warning,  0.08), border: rgba(colors.warning,  0.20) },
+  ALARM:      { label: "ALARM",          color: colors.danger,   bg: rgba(colors.danger,   0.10), border: rgba(colors.danger,   0.22) },
+  RECOVERY:   { label: "RECOVERY",       color: colors.success,  bg: rgba(colors.success,  0.08), border: rgba(colors.success,  0.18) },
+
+  UNACKNOWLEDGED: { label: "UNACKNOWLEDGED", color: colors.danger,   bg: rgba(colors.danger,  0.10), border: rgba(colors.danger,  0.22) },
+  ACKNOWLEDGED:   { label: "ACKNOWLEDGED",   color: colors.info,     bg: rgba(colors.info,    0.08), border: rgba(colors.info,    0.20) },
+  RESPONDING:     { label: "RESPONDING",     color: colors.warning,  bg: rgba(colors.warning, 0.08), border: rgba(colors.warning, 0.20) },
+  ON_SCENE:       { label: "ON SCENE",       color: colors.accent,   bg: rgba(colors.accent,  0.08), border: rgba(colors.accent,  0.20) },
+  RESOLVED:       { label: "RESOLVED",       color: colors.success,  bg: rgba(colors.success, 0.08), border: rgba(colors.success, 0.18) },
+  FALSE_ALARM:    { label: "FALSE ALARM",    color: colors.fgMuted,  bg: rgba(colors.fgMuted, 0.08), border: rgba(colors.fgMuted, 0.20) },
+
+  ONLINE:  { label: "ONLINE",  color: colors.success, bg: rgba(colors.success, 0.08), border: rgba(colors.success, 0.18) },
+  OFFLINE: { label: "OFFLINE", color: colors.danger,  bg: rgba(colors.danger,  0.10), border: rgba(colors.danger,  0.22) },
+  FALL:    { label: "FALL",    color: colors.danger,  bg: rgba(colors.danger,  0.10), border: rgba(colors.danger,  0.22) },
+  SOS:     { label: "SOS",     color: colors.warning, bg: rgba(colors.warning, 0.08), border: rgba(colors.warning, 0.20) },
+  ADMIN:   { label: "ADMIN",   color: colors.accent,  bg: rgba(colors.accent,  0.08), border: rgba(colors.accent,  0.20) },
+  RESPONDER: { label: "RESPONDER", color: colors.info, bg: rgba(colors.info,   0.08), border: rgba(colors.info,   0.20) },
+};
+
+const FALLBACK = {
+  color:  colors.fgMuted,
+  bg:     rgba(colors.fgMuted, 0.08),
+  border: rgba(colors.fgMuted, 0.20),
 };
 
 interface Props {
@@ -120,17 +40,8 @@ interface Props {
   pulse?: boolean;
 }
 
-export default function StatusBadge({
-  status,
-  size = "sm",
-  pulse = false,
-}: Props) {
-  const cfg = CONFIG[status] ?? {
-    label: status,
-    color: "#4a5568",
-    bg: "rgba(74,85,104,0.08)",
-    border: "rgba(74,85,104,0.2)",
-  };
+export default function StatusBadge({ status, size = "sm", pulse = false }: Props) {
+  const cfg = CONFIG[status] ?? { label: status, ...FALLBACK };
 
   return (
     <span

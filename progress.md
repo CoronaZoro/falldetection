@@ -42,11 +42,20 @@ See `dashboard/progress.md` for detailed dashboard progress.
 - [x] Heartbeat → online/offline indicator
 - [x] Fall alert banner + 15s countdown timer
 - [x] Acknowledge button (sends ACK back to Python)
-- [x] Live MJPEG feed component
+- [x] Live MJPEG feed component (annotated frames with bounding boxes)
 - [x] Incident status flow buttons (RESPONDING → ON_SCENE → RESOLVED / FALSE_ALARM)
-- [x] Voice alert transcript log
 - [x] AI First Aid Chatbot (Claude claude-sonnet-4-20250514, placeholder API key)
 - [x] Event log (scrollable, timestamped)
+- [x] Non-scrollable locked viewport layout (h-screen chain + min-h-0)
+- [x] Responsive 2-column grid: feed+log (left), alert+chat (right)
+- [x] Alert card: compact idle state, grows on alarm (max 264px), smooth transition
+
+#### Phase 2b — UI & Color System ✅
+- [x] Global color token system: `lib/colors.ts` + `globals.css @theme`
+- [x] All hardcoded hex values replaced with semantic Tailwind tokens
+- [x] `rgba()` helper for dynamic alpha values (StatusBadge, alert cards)
+- [x] MJPEG feed env var fixed (`NEXT_PUBLIC_FEED_URL`)
+- [x] ChatPanel promoted to first-class panel (fills right column below alert card)
 
 #### Phase 3 — Admin Dashboard ✅
 - [x] System overview + analytics
