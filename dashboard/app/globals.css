@@ -17,26 +17,26 @@
  */
 @theme {
   /* Backgrounds */
-  --color-page:     #0a0c10;
-  --color-surface:  #111318;
+  --color-page: #0a0c10;
+  --color-surface: #111318;
   --color-elevated: #161b24;
 
   /* Borders */
-  --color-line:       #1e2229;
+  --color-line: #1e2229;
   --color-line-muted: #2a3040;
 
   /* Text */
-  --color-fg:       #c9d1e0;
+  --color-fg: #c9d1e0;
   --color-fg-muted: #4a5568;
 
   /* Semantic */
-  --color-danger:      #ff3355;
-  --color-warning:     #ffaa00;
-  --color-success:     #00ff88;
-  --color-info:        #3b82f6;
-  --color-info-dark:   #2563eb;
-  --color-info-light:  #60a5fa;
-  --color-accent:      #8b5cf6;
+  --color-danger: #bb2124;
+  --color-warning: #f0ad4e;
+  --color-success: #22bb33;
+  --color-info: #3b82f6;
+  --color-info-dark: #2563eb;
+  --color-info-light: #60a5fa;
+  --color-accent: #8b5cf6;
   --color-accent-dark: #7c3aed;
 
   /* Typography */
@@ -51,38 +51,79 @@ body {
   background-color: var(--color-page);
   color: var(--color-fg);
   font-family: var(--font-sans);
-  font-size: clamp(20px, 1.25vw, 24px);
+  font-size: clamp(1rem, 1.25vw, 1.2rem);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  scroll-behavior: smooth;
 }
 
 /* Scrollbar */
-::-webkit-scrollbar         { width: 4px; height: 4px; }
-::-webkit-scrollbar-track   { background: var(--color-surface); }
-::-webkit-scrollbar-thumb   { background: var(--color-line-muted); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: var(--color-fg-muted); }
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-surface);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line-muted);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-fg-muted);
+}
 
 /* Animations */
 @keyframes pulse-red {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.4; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 @keyframes flash-in {
-  from { opacity: 0; transform: translateY(-3px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 @keyframes alarm-pulse {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.7; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
 }
 @keyframes thinking-dot {
-  0%, 80%, 100% { transform: scale(0.6); opacity: 0.3; }
-  40%           { transform: scale(1);   opacity: 1;   }
+  0%,
+  80%,
+  100% {
+    transform: scale(0.6);
+    opacity: 0.3;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
-.animate-pulse-red  { animation: pulse-red    1.2s ease-in-out infinite; }
-.animate-alarm      { animation: alarm-pulse  0.8s ease-in-out infinite; }
-.animate-flash-in   { animation: flash-in     0.15s ease-out forwards;  }
+.animate-pulse-red {
+  animation: pulse-red 1.2s ease-in-out infinite;
+}
+.animate-alarm {
+  animation: alarm-pulse 0.8s ease-in-out infinite;
+}
+.animate-flash-in {
+  animation: flash-in 0.15s ease-out forwards;
+}
 
 /* Section label utility — small uppercase muted header */
 .section-label {

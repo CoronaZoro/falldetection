@@ -9,26 +9,26 @@
 
 export const colors = {
   // ── Backgrounds ─────────────────────────────────────────────────
-  page:     "#0a0c10",   // outermost page background
-  surface:  "#111318",   // card / panel background
-  elevated: "#161b24",   // modals, tooltips
+  page: "#0a0c10", // outermost page background
+  surface: "#111318", // card / panel background
+  elevated: "#161b24", // modals, tooltips
 
   // ── Borders ─────────────────────────────────────────────────────
-  line:      "#1e2229",  // default border
-  lineMuted: "#2a3040",  // muted border, placeholder text
+  line: "#1e2229", // default border
+  lineMuted: "#2a3040", // muted border, placeholder text
 
   // ── Text ────────────────────────────────────────────────────────
-  fg:      "#c9d1e0",    // primary text
-  fgMuted: "#4a5568",    // secondary / muted text
+  fg: "#c9d1e0", // primary text
+  fgMuted: "#4a5568", // secondary / muted text
 
   // ── Semantic ────────────────────────────────────────────────────
-  danger:     "#ff3355", // fall alert, alarm, error, UNACKNOWLEDGED
-  warning:    "#ffaa00", // SOS, transition, RESPONDING
-  success:    "#00ff88", // stable, resolved, online, recovery
-  info:       "#3b82f6", // acknowledged, primary action
-  infoDark:   "#2563eb", // hover state for info buttons
-  infoLight:  "#60a5fa", // subtle info links/hover
-  accent:     "#8b5cf6", // on-scene, admin role, AI chat
+  danger: "#bb2124", // fall alert, alarm, error, UNACKNOWLEDGED
+  warning: "#f0ad4e", // SOS, transition, RESPONDING
+  success: "#22bb33", // stable, resolved, online, recovery
+  info: "#3b82f6", // acknowledged, primary action
+  infoDark: "#2563eb", // hover state for info buttons
+  infoLight: "#60a5fa", // subtle info links/hover
+  accent: "#8b5cf6", // on-scene, admin role, AI chat
   accentDark: "#7c3aed", // hover for accent
 } as const;
 

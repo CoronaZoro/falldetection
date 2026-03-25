@@ -22,10 +22,10 @@ export default function LiveFeed({ online = true }: Props) {
     return (
       <div className='w-full max-w-2xl mx-auto aspect-video bg-page border border-line rounded flex flex-col items-center justify-center gap-2 text-fg-muted'>
         <CameraOff size={28} />
-        <span className='text-xs'>Feed unavailable</span>
-        <span className='font-mono text-[10px] text-line-muted'>
+        <span className='text-xs'>Video Feed unavailable</span>
+        {/* <span className='font-mono text-[10px] text-line-muted'>
           {FEED_URL}
-        </span>
+        </span> */}
       </div>
     );
   }
