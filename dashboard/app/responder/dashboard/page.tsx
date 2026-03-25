@@ -7,6 +7,7 @@ export default async function ResponderDashboardPage() {
     <ResponderDashboardClient
       userId={session!.user.id}
       userName={session!.user.name ?? "Responder"}
+      isAuthorized={session!.user.isAuthorized ?? false}
     />
   );
 }

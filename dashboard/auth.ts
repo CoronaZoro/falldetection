@@ -29,10 +29,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!valid) return null;
 
         return {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
+          id:           user.id,
+          name:         user.name,
+          email:        user.email,
+          role:         user.role,
+          isAuthorized: user.isAuthorized,
         };
       },
     }),
@@ -40,15 +41,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.id = user.id;
-        token.role = (user as { role?: string }).role;
+        token.id           = user.id;
+        token.role         = (user as { role?: string }).role;
+        token.isAuthorized = (user as { isAuthorized?: boolean }).isAuthorized;
       }
       return token;
     },
     async session({ session, token }) {
       if (token) {
-        session.user.id = token.id as string;
-        session.user.role = token.role as string;
+        session.user.id           = token.id as string;
+        session.user.role         = token.role as string;
+        session.user.isAuthorized = token.isAuthorized as boolean;
       }
       return session;
     },

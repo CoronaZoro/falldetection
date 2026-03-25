@@ -1,27 +1,23 @@
 "use client";
 
 import {
-  AlertTriangle, Hand, Heart, Activity, Volume2, CheckCircle,
+  AlertTriangle, Hand, Heart, CheckCircle,
 } from "lucide-react";
 import { colors } from "@/lib/colors";
 import type { EventLogEntry } from "@/types";
 
 const ICONS: Record<string, React.ReactNode> = {
-  fall:      <AlertTriangle size={12} className='text-danger' />,
-  sos:       <Hand          size={12} className='text-warning' />,
-  recovery:  <Heart         size={12} className='text-success' />,
-  heartbeat: <Activity      size={12} className='text-line-muted' />,
-  voice:     <Volume2       size={12} className='text-info' />,
-  ack:       <CheckCircle   size={12} className='text-info' />,
+  fall:     <AlertTriangle size={12} className='text-danger' />,
+  sos:      <Hand          size={12} className='text-warning' />,
+  recovery: <Heart         size={12} className='text-success' />,
+  ack:      <CheckCircle   size={12} className='text-info' />,
 };
 
 const LEFT_COLOR: Record<string, string> = {
-  fall:      colors.danger,
-  sos:       colors.warning,
-  recovery:  colors.success,
-  heartbeat: colors.line,
-  voice:     colors.info,
-  ack:       colors.info,
+  fall:     colors.danger,
+  sos:      colors.warning,
+  recovery: colors.success,
+  ack:      colors.info,
 };
 
 interface Props {

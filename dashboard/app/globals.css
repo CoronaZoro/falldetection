@@ -75,10 +75,14 @@ body {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.7; }
 }
+@keyframes thinking-dot {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.3; }
+  40%           { transform: scale(1);   opacity: 1;   }
+}
 
-.animate-pulse-red { animation: pulse-red  1.2s ease-in-out infinite; }
-.animate-alarm     { animation: alarm-pulse 0.8s ease-in-out infinite; }
-.animate-flash-in  { animation: flash-in   0.15s ease-out forwards; }
+.animate-pulse-red  { animation: pulse-red    1.2s ease-in-out infinite; }
+.animate-alarm      { animation: alarm-pulse  0.8s ease-in-out infinite; }
+.animate-flash-in   { animation: flash-in     0.15s ease-out forwards;  }
 
 /* Section label utility — small uppercase muted header */
 .section-label {

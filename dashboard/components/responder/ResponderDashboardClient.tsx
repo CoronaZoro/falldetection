@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import LiveFeed from "@/components/LiveFeed";
 import EventLog from "@/components/EventLog";
@@ -12,7 +12,7 @@ import {
   Wifi, WifiOff, Activity, Users, CheckCircle, ChevronRight,
 } from "lucide-react";
 import { colors, rgba } from "@/lib/colors";
-import type { WSMessage, EventLogEntry, IncidentStatus } from "@/types";
+import type { WSMessage, EventLogEntry, IncidentStatus, VoiceEntry } from "@/types";
 
 interface Alert {
   eventId: string;
@@ -23,30 +23,78 @@ interface Alert {
   timestamp: number;
 }
 
+type ChatLanguage = "English" | "Thai" | "Japanese" | "Chinese";
+type ChatSpeed    = "0.5x" | "0.75x" | "1x" | "1.25x" | "1.5x" | "2x";
+
 interface Props {
   userId: string;
   userName: string;
+  isAuthorized: boolean;
 }
 
 let eventCounter = 0;
 
-export default function ResponderDashboardClient({ userId, userName }: Props) {
+export default function ResponderDashboardClient({ userId, userName, isAuthorized }: Props) {
+  const seenMids         = useRef<Set<number>>(new Set());
+  const incidentIdRef    = useRef<string | null>(null);   // always-current for async callbacks
+  const incidentEverFired = useRef(false);                // locks ChatPanel until first incident
   const [systemState, setSystemState] = useState("STABLE");
   const [personsDetected, setPersons] = useState(0);
   const [activeAlert, setActiveAlert] = useState<Alert | null>(null);
   const [alertIncidentId, setIncidentId] = useState<string | null>(null);
   const [incidentStatus, setStatus] = useState<IncidentStatus>("UNACKNOWLEDGED");
-  const [eventLog, setEventLog] = useState<EventLogEntry[]>([]);
-  // const [voiceLog, setVoiceLog] = useState<string[]>([]);
+  const [eventLog,    setEventLog]   = useState<EventLogEntry[]>([]);
+  const [transcript,  setTranscript] = useState<VoiceEntry[]>([]);
+  const [callActive,  setCallActive] = useState(false);
+  const [language,    setLanguage]   = useState<ChatLanguage>("English");
+  const [speed,       setSpeed]      = useState<ChatSpeed>("1x");
+  const [isThinking,  setIsThinking] = useState(false);   // AI is generating — show "..."
+
+  const API_URL = (process.env.NEXT_PUBLIC_DETECTION_WS_URL ?? "ws://localhost:8765/ws")
+    .replace("ws://", "http://").replace("/ws", "");
+
+  // Sync initial call state on mount
+  useEffect(() => {
+    fetch(`${API_URL}/call/status`)
+      .then((r) => r.json())
+      .then((d) => setCallActive(d.active === true))
+      .catch(() => {});
+  }, [API_URL]);
+
+  // Keep ref in sync with state so async callbacks always see the latest value
+  useEffect(() => { incidentIdRef.current = alertIncidentId; }, [alertIncidentId]);
+
+  // Persist a log entry to DB — fire-and-forget, non-critical
+  const persistLog = useCallback((type: string, message: string, iid?: string | null) => {
+    const id = iid ?? incidentIdRef.current;
+    if (!id) return;
+    fetch(`/api/incidents/${id}/log`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ type, message }),
+    }).catch(() => {});
+  }, []);
+
+  // Persist a transcript entry to DB — fire-and-forget
+  const persistTranscript = useCallback((speaker: string, text: string) => {
+    const id = incidentIdRef.current;
+    if (!id) return;
+    fetch(`/api/incidents/${id}/transcript`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ speaker, text }),
+    }).catch(() => {});
+  }, []);
 
   const addEvent = useCallback(
-    (type: EventLogEntry["type"], message: string, timestamp: number) => {
+    (type: EventLogEntry["type"], message: string, timestamp: number, persistToDb = true, iid?: string | null) => {
       setEventLog((prev) => [
         { id: String(++eventCounter), type, message, timestamp },
         ...prev.slice(0, 49),
       ]);
+      if (persistToDb) persistLog(type, message, iid);
     },
-    [],
+    [persistLog],
   );
 
   const handleMessage = useCallback(
@@ -57,11 +105,13 @@ export default function ResponderDashboardClient({ userId, userName }: Props) {
         return;
       }
       if (msg.type === "fall_alert" && msg.event_id) {
-        addEvent(
-          "fall",
-          `Fall — Person ${msg.person_id ?? 0} (AR: ${msg.ar?.toFixed(2)})`,
-          msg.timestamp,
-        );
+        incidentEverFired.current = true;
+        setEventLog([]);   // start fresh log for new incident
+        setTranscript([]);
+        setIsThinking(false);
+        incidentIdRef.current = null;
+        setStatus("UNACKNOWLEDGED");
+        setIncidentId(null);
         setSystemState("ALARM");
         setActiveAlert({
           eventId: msg.event_id,
@@ -71,8 +121,6 @@ export default function ResponderDashboardClient({ userId, userName }: Props) {
           downDuration: msg.down_duration,
           timestamp: msg.timestamp,
         });
-        setStatus("UNACKNOWLEDGED");
-        setIncidentId(null);
         try {
           const res = await fetch("/api/incidents", {
             method: "POST",
@@ -85,19 +133,35 @@ export default function ResponderDashboardClient({ userId, userName }: Props) {
               downDuration: msg.down_duration ?? 0,
             }),
           });
-          if (res.ok) setIncidentId((await res.json()).id);
+          if (res.ok) {
+            const newId = (await res.json()).id;
+            incidentIdRef.current = newId;
+            setIncidentId(newId);
+            // First log entry — pass newId directly since ref/state won't be set yet
+            addEvent(
+              "fall",
+              `Fall — Person ${msg.person_id ?? 0} (AR: ${msg.ar?.toFixed(2)})`,
+              msg.timestamp,
+              true,
+              newId,
+            );
+          }
         } catch { /* non-critical */ }
       }
       if (msg.type === "sos_alert" && msg.event_id) {
-        addEvent("sos", "SOS gesture — manual emergency", msg.timestamp);
+        incidentEverFired.current = true;
+        setEventLog([]);   // start fresh log for new incident
+        setTranscript([]);
+        setIsThinking(false);
+        incidentIdRef.current = null;
+        setStatus("UNACKNOWLEDGED");
+        setIncidentId(null);
         setSystemState("SOS");
         setActiveAlert({
           eventId: msg.event_id,
           type: "sos",
           timestamp: msg.timestamp,
         });
-        setStatus("UNACKNOWLEDGED");
-        setIncidentId(null);
         try {
           const res = await fetch("/api/incidents", {
             method: "POST",
@@ -110,7 +174,12 @@ export default function ResponderDashboardClient({ userId, userName }: Props) {
               downDuration: 0,
             }),
           });
-          if (res.ok) setIncidentId((await res.json()).id);
+          if (res.ok) {
+            const newId = (await res.json()).id;
+            incidentIdRef.current = newId;
+            setIncidentId(newId);
+            addEvent("sos", "SOS gesture — manual emergency", msg.timestamp, true, newId);
+          }
         } catch { /* non-critical */ }
       }
       if (msg.type === "recovery") {
@@ -118,20 +187,87 @@ export default function ResponderDashboardClient({ userId, userName }: Props) {
         setSystemState("STABLE");
       }
       if (msg.type === "voice_alert" && msg.message) {
-        addEvent("voice", `"${msg.message}"`, msg.timestamp);
-        // setVoiceLog((prev) => [msg.message!, ...prev.slice(0, 19)]);
+        // Deduplicate: two WS connections (React StrictMode) can deliver the same message twice
+        if (msg.mid !== undefined) {
+          if (seenMids.current.has(msg.mid)) return;
+          seenMids.current.add(msg.mid);
+          if (seenMids.current.size > 200) seenMids.current.clear();
+        }
+        const speaker = (msg.speaker ?? "assistant") as "user" | "assistant";
+        // Save to DB immediately regardless of display state
+        persistTranscript(speaker, msg.message!);
+
+        // Both user and AI messages go straight to transcript.
+        // ChatPanel animates the latest AI entry in-place — no callback needed.
+        setTranscript((prev) => [
+          ...prev.slice(-29),
+          { speaker, text: msg.message!, timestamp: msg.timestamp },
+        ]);
+        if (speaker === "user") {
+          setIsThinking(true);
+        } else {
+          setIsThinking(false);  // AI replied → clear thinking dots
+        }
+      }
+      if (msg.type === "call_status") {
+        setCallActive(msg.callStatus === "active");
       }
     },
-    [addEvent],
+    [addEvent, persistTranscript, setIsThinking],
   );
 
   const { status: wsStatus, send } = useWebSocket(handleMessage);
+
+  const onCallStart = useCallback(async (lang: string, spd: string) => {
+    setCallActive(true);
+    setTranscript([]);
+    setIsThinking(false);
+    try {
+      await fetch(`${API_URL}/call/start`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          language:      lang,
+          speed:         spd,
+          is_authorized: isAuthorized,
+          incident:      activeAlert
+            ? {
+                type:          activeAlert.type.toUpperCase(),
+                person_id:     activeAlert.personId ?? 0,
+                ar:            activeAlert.ar         ?? 0,
+                down_duration: activeAlert.downDuration ?? 0,
+                status:        incidentStatus,
+              }
+            : null,
+        }),
+      });
+    } catch { setCallActive(false); }
+  }, [API_URL, isAuthorized, activeAlert, incidentStatus]);
+
+  const onCallStop = useCallback(async () => {
+    setCallActive(false);
+    setIsThinking(false);
+    try { await fetch(`${API_URL}/call/stop`, { method: "POST" }); } catch { /* non-critical */ }
+  }, [API_URL]);
+
+  // Mid-call language / speed change — updates server globals live
+  const onCallSettings = useCallback(async (lang: ChatLanguage, spd: ChatSpeed) => {
+    setLanguage(lang);
+    setSpeed(spd);
+    try {
+      await fetch(`${API_URL}/call/settings`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ language: lang, speed: spd }),
+      });
+    } catch {}
+  }, [API_URL]);
 
   const acknowledge = useCallback(async () => {
     if (!activeAlert) return;
     send({ type: "acknowledge", event_id: activeAlert.eventId });
     setStatus("ACKNOWLEDGED");
-    addEvent("ack", "Alert acknowledged", Date.now() / 1000);
+    addEvent("ack", `Acknowledged by ${userName}`, Date.now() / 1000);
     if (alertIncidentId) {
       await fetch(`/api/incidents/${alertIncidentId}`, {
         method: "PUT",
@@ -139,10 +275,17 @@ export default function ResponderDashboardClient({ userId, userName }: Props) {
         body: JSON.stringify({ status: "ACKNOWLEDGED", acknowledgedBy: userId }),
       });
     }
-  }, [activeAlert, send, addEvent, alertIncidentId, userId]);
+  }, [activeAlert, send, addEvent, alertIncidentId, userId, userName]);
 
   const updateStatus = useCallback(async (newStatus: IncidentStatus) => {
     setStatus(newStatus);
+    const label: Record<string, string> = {
+      RESPONDING:  "Status → Responding",
+      ON_SCENE:    "Status → On Scene",
+      RESOLVED:    "Incident resolved",
+      FALSE_ALARM: "Marked as false alarm",
+    };
+    addEvent("ack", label[newStatus] ?? newStatus, Date.now() / 1000);
     if (alertIncidentId) {
       await fetch(`/api/incidents/${alertIncidentId}`, {
         method: "PUT",
@@ -152,7 +295,7 @@ export default function ResponderDashboardClient({ userId, userName }: Props) {
     }
     if (newStatus === "RESOLVED" || newStatus === "FALSE_ALARM")
       setTimeout(() => setActiveAlert(null), 800);
-  }, [alertIncidentId]);
+  }, [alertIncidentId, addEvent]);
 
   const isAlarming = activeAlert !== null;
   const isFall     = activeAlert?.type === "fall";
@@ -303,10 +446,21 @@ export default function ResponderDashboardClient({ userId, userName }: Props) {
             </div>
           </div>
 
-          {/* ChatPanel — fills all remaining right column space */}
-          {/* h-48 on mobile (fixed), flex-1 on md+ (fills rest) */}
-          <div className='h-48 md:flex-1 md:min-h-0'>
-            <ChatPanel />
+          {/* Voice Assistant panel — fills remaining right column */}
+          <div className='h-64 md:flex-1 md:min-h-0'>
+            <ChatPanel
+              isAuthorized={isAuthorized}
+              transcript={transcript}
+              callActive={callActive}
+              onCallStart={onCallStart}
+              onCallStop={onCallStop}
+              language={language}
+              speed={speed}
+              onCallSettings={onCallSettings}
+              activeIncident={activeAlert}
+              incidentUnlocked={incidentEverFired.current}
+              isThinking={isThinking}
+            />
           </div>
 
         </div>

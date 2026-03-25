@@ -8,15 +8,16 @@ datasource db {
 }
 
 model User {
-  id        String     @id @default(cuid())
-  name      String
-  email     String     @unique
-  password  String
-  role      Role       @default(RESPONDER)
-  phone     String?
-  isActive  Boolean    @default(true)
-  createdAt DateTime   @default(now())
-  incidents Incident[]
+  id           String     @id @default(cuid())
+  name         String
+  email        String     @unique
+  password     String
+  role         Role       @default(RESPONDER)
+  isAuthorized Boolean    @default(false)
+  phone        String?
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  incidents    Incident[]
 }
 
 enum Role {
@@ -25,21 +26,41 @@ enum Role {
 }
 
 model Incident {
-  id              String         @id @default(cuid())
-  eventId         String         @unique
+  id              String               @id @default(cuid())
+  eventId         String               @unique
   type            IncidentType
   personId        Int
   ar              Float
   downDuration    Float
-  status          IncidentStatus @default(UNACKNOWLEDGED)
+  status          IncidentStatus       @default(UNACKNOWLEDGED)
   acknowledgedBy  String?
   acknowledgedAt  DateTime?
   resolvedAt      DateTime?
   notes           String?
-  reportGenerated Boolean        @default(false)
+  reportGenerated Boolean              @default(false)
   reportText      String?
-  createdAt       DateTime       @default(now())
-  user            User?          @relation(fields: [acknowledgedBy], references: [id])
+  createdAt       DateTime             @default(now())
+  user            User?                @relation(fields: [acknowledgedBy], references: [id])
+  logs            IncidentLog[]
+  transcripts     IncidentTranscript[]
+}
+
+model IncidentLog {
+  id         String   @id @default(cuid())
+  incidentId String
+  type       String   // "fall" | "sos" | "recovery" | "ack" | "status"
+  message    String
+  timestamp  DateTime @default(now())
+  incident   Incident @relation(fields: [incidentId], references: [id])
+}
+
+model IncidentTranscript {
+  id         String   @id @default(cuid())
+  incidentId String
+  speaker    String   // "user" | "assistant"
+  text       String
+  timestamp  DateTime @default(now())
+  incident   Incident @relation(fields: [incidentId], references: [id])
 }
 
 enum IncidentType {

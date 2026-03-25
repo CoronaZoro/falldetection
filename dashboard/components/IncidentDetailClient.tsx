@@ -3,7 +3,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import StatusBadge from "@/components/StatusBadge";
-import { ArrowLeft, FileText, Loader2 } from "lucide-react";
+import {
+  ArrowLeft, FileText, Loader2, ListOrdered, MessageSquare,
+  AlertTriangle, Siren, CheckCircle, Activity, Bot, User,
+} from "lucide-react";
+import { colors, rgba } from "@/lib/colors";
 
 interface Incident {
   id: string;
@@ -20,6 +24,22 @@ interface Incident {
   reportGenerated: boolean;
   createdAt: string;
   user?: { name: string; email: string } | null;
+  logs:        IncidentLogEntry[];
+  transcripts: IncidentTranscriptEntry[];
+}
+
+interface IncidentLogEntry {
+  id: string;
+  type: string;
+  message: string;
+  timestamp: string;
+}
+
+interface IncidentTranscriptEntry {
+  id: string;
+  speaker: string;
+  text: string;
+  timestamp: string;
 }
 
 interface Props {
@@ -27,12 +47,26 @@ interface Props {
   role: "ADMIN" | "RESPONDER";
 }
 
+type Tab = "timeline" | "transcript" | "report";
+
+const LOG_ICONS: Record<string, React.ReactNode> = {
+  fall:     <AlertTriangle size={11} className="text-danger shrink-0 mt-0.5" />,
+  sos:      <Siren        size={11} className="text-warning shrink-0 mt-0.5" />,
+  recovery: <CheckCircle  size={11} className="text-success shrink-0 mt-0.5" />,
+  ack:      <Activity     size={11} className="text-info    shrink-0 mt-0.5" />,
+};
+
+function fmt(ts: string) {
+  return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
 export default function IncidentDetailClient({ id, role }: Props) {
   const router = useRouter();
   const [incident, setIncident] = useState<Incident | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [notes, setNotes] = useState("");
+  const [loading,  setLoading]  = useState(true);
+  const [notes,    setNotes]    = useState("");
   const [genReport, setGenReport] = useState(false);
+  const [tab, setTab] = useState<Tab>("timeline");
 
   useEffect(() => {
     fetch(`/api/incidents/${id}`)
@@ -46,158 +80,249 @@ export default function IncidentDetailClient({ id, role }: Props) {
 
   async function saveNotes() {
     await fetch(`/api/incidents/${id}`, {
-      method: "PUT",
+      method:  "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ notes }),
+      body:    JSON.stringify({ notes }),
     });
     setIncident((prev) => (prev ? { ...prev, notes } : prev));
   }
 
   async function generateReport() {
     setGenReport(true);
-    const res = await fetch(`/api/incidents/${id}/report`, { method: "POST" });
+    const res  = await fetch(`/api/incidents/${id}/report`, { method: "POST" });
     const data = await res.json();
     setIncident((prev) =>
-      prev
-        ? { ...prev, reportText: data.reportText, reportGenerated: true }
-        : prev,
+      prev ? { ...prev, reportText: data.reportText, reportGenerated: true } : prev,
     );
     setGenReport(false);
   }
 
-  const backPath =
-    role === "ADMIN" ? "/admin/incidents" : "/responder/incidents";
+  const backPath = role === "ADMIN" ? "/admin/incidents" : "/responder/incidents";
 
-  if (loading)
-    return <div className='text-[#4a5568] text-center pt-16'>Loading...</div>;
-  if (!incident)
-    return (
-      <div className='text-[#ff3355] text-center pt-16'>Incident not found</div>
-    );
+  if (loading)  return <div className="text-fg-muted text-center pt-16">Loading…</div>;
+  if (!incident) return <div className="text-danger text-center pt-16">Incident not found</div>;
 
   const responseTime = incident.acknowledgedAt
     ? Math.round(
-        (new Date(incident.acknowledgedAt).getTime() -
-          new Date(incident.createdAt).getTime()) /
-          1000,
+        (new Date(incident.acknowledgedAt).getTime() - new Date(incident.createdAt).getTime()) / 1000,
       )
     : null;
 
+  const TABS: { key: Tab; label: string; icon: React.ReactNode; badge?: number }[] = [
+    { key: "timeline",   label: "Timeline",   icon: <ListOrdered  size={11} />, badge: incident.logs.length },
+    { key: "transcript", label: "Transcript", icon: <MessageSquare size={11} />, badge: incident.transcripts.length },
+    { key: "report",     label: "Report",     icon: <FileText      size={11} /> },
+  ];
+
   return (
-    <div className='flex flex-col gap-6 max-w-[700px] max-h-[80vh] justify-start mx-auto'>
+    <div className="flex flex-col gap-4 max-w-[720px] mx-auto">
+
+      {/* Back */}
       <button
         onClick={() => router.push(backPath)}
-        className='flex items-center gap-1.5 bg-transparent border-none text-[#4a5568] hover:text-[#c8d0e0] cursor-pointer text-sm p-0 transition-colors'
+        className="flex items-center gap-1.5 bg-transparent border-none text-fg-muted hover:text-fg cursor-pointer text-sm p-0 transition-colors w-fit"
       >
-        <ArrowLeft size={16} /> Back to incidents
+        <ArrowLeft size={14} /> Back to incidents
       </button>
 
+      {/* Header */}
       <div>
-        <div className='flex items-center gap-2 mb-1'>
-          <h1 className='text-base font-semibold text-[#c9d1e0]'>
-            Incident Detail
-          </h1>
-          <StatusBadge status={incident.type} size='sm' />
-          <StatusBadge status={incident.status} size='sm' />
+        <div className="flex items-center gap-2 mb-1">
+          <h1 className="text-base font-semibold text-fg">Incident Detail</h1>
+          <StatusBadge status={incident.type}   size="sm" />
+          <StatusBadge status={incident.status} size="sm" />
         </div>
-        <p className='text-xs text-[#4a5568] font-mono'>{incident.eventId}</p>
+        <p className="text-xs text-fg-muted font-mono">{incident.eventId}</p>
       </div>
 
-      <div className='flex flex-col gap-6 overflow-y-auto max-h-[60vh]'>
-        {/* Data grid */}
-        <div className='bg-[#111318] border border-[#1e2229] rounded p-4'>
-          <p className='section-label mb-3'>Incident Data</p>
-          <div className='grid grid-cols-2 gap-3'>
-            {[
-              ["Person ID", `#${incident.personId}`],
-              ["Aspect Ratio", incident.ar.toFixed(2)],
-              ["Duration on ground", `${incident.downDuration.toFixed(1)}s`],
-              [
-                "Response time",
-                responseTime !== null ? `${responseTime}s` : "Not acknowledged",
-              ],
-              ["Created", new Date(incident.createdAt).toLocaleString()],
-              [
-                "Resolved",
-                incident.resolvedAt
-                  ? new Date(incident.resolvedAt).toLocaleString()
-                  : "—",
-              ],
-              ["Acknowledged by", incident.user?.name ?? "—"],
-            ].map(([label, val]) => (
-              <div key={label as string}>
-                <p className='section-label mb-0.5'>{label}</p>
-                <p className='text-sm text-[#c9d1e0] font-mono'>{val}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Notes */}
-        <div className='bg-[#111318] border border-[#1e2229] rounded p-2'>
-          <p className='section-label mb-3'>Notes</p>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder='Add notes about this incident...'
-            rows={4}
-            className='w-full bg-[#0a0c10] border border-[#1e2229] rounded px-3 py-2 text-[#c9d1e0] text-xs outline-none focus:border-[#3b82f6] resize-y transition-colors'
-          />
-          <button
-            onClick={saveNotes}
-            className='mt-1 bg-[#3b82f6] hover:bg-[#2563eb] border-none rounded px-3 py-1.5 text-white font-semibold text-xs cursor-pointer transition-colors'
-          >
-            Save Notes
-          </button>
-        </div>
-
-        {/* AI Report */}
-        <div className='bg-[#111318] border border-[#1e2229] rounded p-4'>
-          <div className='flex items-center justify-between mb-3'>
-            <div className='flex items-center gap-1.5'>
-              <FileText size={13} className='text-[#8b5cf6]' />
-              <p className='section-label'>AI Incident Report</p>
+      {/* Data grid */}
+      <div className="bg-surface border border-line rounded p-4">
+        <p className="section-label mb-3">Incident Data</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {[
+            ["Person ID",          `#${incident.personId}`],
+            ["Aspect Ratio",       incident.ar.toFixed(2)],
+            ["Duration on ground", `${incident.downDuration.toFixed(1)}s`],
+            ["Response time",      responseTime !== null ? `${responseTime}s` : "Not acknowledged"],
+            ["Detected",           new Date(incident.createdAt).toLocaleString()],
+            ["Resolved",           incident.resolvedAt ? new Date(incident.resolvedAt).toLocaleString() : "—"],
+            ["Acknowledged by",    incident.user?.name ?? "—"],
+          ].map(([label, val]) => (
+            <div key={label as string}>
+              <p className="section-label mb-0.5">{label}</p>
+              <p className="text-sm text-fg font-mono">{val}</p>
             </div>
-            {!incident.reportGenerated && (
-              <button
-                onClick={generateReport}
-                disabled={genReport}
-                className='flex items-center gap-1.5 bg-[#8b5cf6] hover:bg-[#7c3aed] border-none rounded px-3 py-1.5 text-white font-semibold text-xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed transition-colors'
-              >
-                {genReport && <Loader2 size={13} className='animate-spin' />}
-                Generate Report
-              </button>
-            )}
-          </div>
+          ))}
+        </div>
+      </div>
 
-          {incident.reportText ? (
-            <div>
-              <p className='text-xs text-[#c9d1e0] leading-relaxed bg-[#8b5cf6]/06 rounded border-l-2 border-[#8b5cf6] px-3 py-2.5'>
-                {incident.reportText}
+      {/* Notes */}
+      <div className="bg-surface border border-line rounded p-4">
+        <p className="section-label mb-3">Notes</p>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Add notes about this incident..."
+          rows={3}
+          className="w-full bg-page border border-line rounded px-3 py-2 text-fg text-xs outline-none focus:border-info resize-y transition-colors"
+        />
+        <button
+          onClick={saveNotes}
+          className="mt-1.5 bg-info hover:bg-info-dark border-none rounded px-3 py-1.5 text-white font-semibold text-xs cursor-pointer transition-colors"
+        >
+          Save Notes
+        </button>
+      </div>
+
+      {/* Tabs: Timeline / Transcript / Report */}
+      <div className="bg-surface border border-line rounded overflow-hidden">
+
+        {/* Tab bar */}
+        <div className="flex border-b border-line">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium cursor-pointer border-none transition-colors ${
+                tab === t.key
+                  ? "text-fg border-b-2 border-accent bg-transparent"
+                  : "text-fg-muted bg-transparent hover:text-fg"
+              }`}
+              style={tab === t.key ? { borderBottomColor: colors.accent } : {}}
+            >
+              {t.icon}
+              {t.label}
+              {t.badge !== undefined && t.badge > 0 && (
+                <span className="ml-0.5 font-mono text-[10px] text-fg-muted">({t.badge})</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab content */}
+        <div className="p-4">
+
+          {/* ── Timeline ── */}
+          {tab === "timeline" && (
+            incident.logs.length === 0 ? (
+              <p className="text-xs text-fg-muted text-center py-6">
+                No timeline entries recorded for this incident.
               </p>
-              <button
-                onClick={() => {
-                  const blob = new Blob([incident.reportText!], {
-                    type: "text/plain",
-                  });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `incident-${incident.eventId}.txt`;
-                  a.click();
-                }}
-                className='mt-3 bg-transparent border border-[#1e2229] rounded px-3 py-1.5 text-[#4a5568] hover:text-[#c9d1e0] text-xs cursor-pointer transition-colors'
-              >
-                Download Report
-              </button>
-            </div>
-          ) : (
-            <p className='text-xs text-[#4a5568]'>
-              {incident.status === "RESOLVED"
-                ? "Click 'Generate Report' to create an AI-written incident summary."
-                : "Report generation is available once the incident is resolved."}
-            </p>
+            ) : (
+              <div className="flex flex-col gap-0">
+                {incident.logs.map((entry, i) => (
+                  <div key={entry.id} className="flex gap-3 items-start relative">
+                    {/* Vertical connector line */}
+                    {i < incident.logs.length - 1 && (
+                      <div
+                        className="absolute left-[11px] top-5 w-px bottom-0"
+                        style={{ background: rgba(colors.line, 1), minHeight: "20px" }}
+                      />
+                    )}
+                    {/* Icon */}
+                    <div
+                      className="shrink-0 w-[22px] h-[22px] rounded-full flex items-center justify-center mt-0.5 z-10"
+                      style={{ background: rgba(colors.line, 1), border: `1px solid ${colors.line}` }}
+                    >
+                      {LOG_ICONS[entry.type] ?? <Activity size={10} className="text-fg-muted" />}
+                    </div>
+                    {/* Content */}
+                    <div className="pb-4 flex-1">
+                      <p className="text-xs text-fg leading-snug">{entry.message}</p>
+                      <p className="text-[10px] text-fg-muted font-mono mt-0.5">{fmt(entry.timestamp)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
           )}
+
+          {/* ── Transcript ── */}
+          {tab === "transcript" && (
+            incident.transcripts.length === 0 ? (
+              <p className="text-xs text-fg-muted text-center py-6">
+                No voice transcript recorded for this incident.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {incident.transcripts.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className={`flex gap-1.5 items-start ${entry.speaker === "user" ? "justify-end" : ""}`}
+                  >
+                    {entry.speaker === "assistant" && (
+                      <Bot size={11} className="text-accent shrink-0 mt-0.5" />
+                    )}
+                    <div className="max-w-[82%]">
+                      <p className={`text-[11px] leading-snug text-fg px-2.5 py-1.5 rounded-lg ${
+                        entry.speaker === "user"
+                          ? "bg-info/15 rounded-br-none"
+                          : "bg-accent/10 rounded-bl-none"
+                      }`}>
+                        {entry.text}
+                      </p>
+                      <p className={`text-[10px] text-fg-muted font-mono mt-0.5 ${
+                        entry.speaker === "user" ? "text-right" : ""
+                      }`}>
+                        {fmt(entry.timestamp)}
+                      </p>
+                    </div>
+                    {entry.speaker === "user" && (
+                      <User size={11} className="text-info shrink-0 mt-0.5" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+
+          {/* ── Report ── */}
+          {tab === "report" && (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <p className="section-label">AI Incident Report</p>
+                {!incident.reportGenerated && (
+                  <button
+                    onClick={generateReport}
+                    disabled={genReport}
+                    className="flex items-center gap-1.5 bg-accent hover:bg-accent-dark border-none rounded px-3 py-1.5 text-white font-semibold text-xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {genReport && <Loader2 size={12} className="animate-spin" />}
+                    Generate Report
+                  </button>
+                )}
+              </div>
+
+              {incident.reportText ? (
+                <div>
+                  <p
+                    className="text-xs text-fg leading-relaxed rounded border-l-2 px-3 py-2.5"
+                    style={{ background: rgba(colors.accent, 0.06), borderLeftColor: colors.accent }}
+                  >
+                    {incident.reportText}
+                  </p>
+                  <button
+                    onClick={() => {
+                      const blob = new Blob([incident.reportText!], { type: "text/plain" });
+                      const url  = URL.createObjectURL(blob);
+                      const a    = document.createElement("a");
+                      a.href = url; a.download = `incident-${incident.eventId}.txt`; a.click();
+                    }}
+                    className="mt-3 bg-transparent border border-line rounded px-3 py-1.5 text-fg-muted hover:text-fg text-xs cursor-pointer transition-colors"
+                  >
+                    Download Report
+                  </button>
+                </div>
+              ) : (
+                <p className="text-xs text-fg-muted">
+                  {incident.status === "RESOLVED"
+                    ? "Click 'Generate Report' to create an AI-written incident summary."
+                    : "Report generation is available once the incident is resolved."}
+                </p>
+              )}
+            </div>
+          )}
+
         </div>
       </div>
     </div>

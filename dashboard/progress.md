@@ -175,11 +175,97 @@ rgba(colors.danger, 0.1) // "rgba(255,51,85,0.1)"
 Mobile: right col first (alert+chat), left col below (feed+log)
 ```
 
+## Phase 4 — Voice AI Integration ✅
+
+### Authorization Tier System
+- [x] `isAuthorized` field added to `User` model (Prisma migration via `db push`)
+- [x] Passed through NextAuth JWT → session → responder dashboard
+- [x] Admin UI: "Authorized healthcare provider" checkbox in user create/edit modal
+- [x] Admin table: shows `ShieldCheck` (authorized) / `ShieldOff` (unauthorized) per responder
+- [x] API routes (`POST /api/admin/users`, `PUT /api/admin/users/[id]`) handle `isAuthorized`
+
+### Voice Assistant Panel (Gemini Live-style)
+- [x] `ChatPanel.tsx` full rewrite: Start/Stop call button, Gemini-style pulsing phone icon, language picker
+- [x] Idle + no history: large centered pulsing phone button + language dropdown
+- [x] Active call: pulsing mic + "Listening…" text + red End Call button
+- [x] Idle + has history: compact "New Call" button row with language picker
+- [x] Authorized badge: `ShieldCheck` green — "Clinical guidance enabled"
+- [x] Unauthorized badge: `ShieldOff` amber — "Emergency contacts only"
+- [x] Live "●live" indicator when call is active
+- [x] Transcript entries: user speech (right, blue bubble), AI reply (left, purple bubble)
+- [x] `VoiceEntry` type: `{ speaker: "user"|"assistant", text, timestamp }`
+
+### Voice Session API
+- [x] `POST /call/start` — starts headless voice loop in daemon thread
+- [x] `POST /call/stop` — stops loop + kills TTS subprocess
+- [x] `GET /call/status` — returns `{ active: bool }` (fetched on dashboard mount)
+- [x] `call_status` WS message syncs button state across all clients
+- [x] Language picker (English / Thai / Japanese / Chinese) sends language to server
+- [x] `is_authorized` flag sent so server picks correct system prompt tier
+
+### Deduplication
+- [x] `mid` counter in `_tx()` — each `voice_alert` broadcast has a unique monotonic ID
+- [x] `seenMids` `useRef<Set<number>>` on client — drops duplicate messages from React StrictMode double-WS-connections
+- [x] Set cleared at 200 entries to prevent unbounded memory growth
+
+### FastAPI `/transcript` endpoint
+- [x] `POST /transcript` added to `alerts/server.py`
+- [x] Accepts `{ speaker: "user"|"assistant", text: string }` (Pydantic model)
+- [x] Broadcasts as `voice_alert` WS message with `speaker` field to all dashboards
+- [x] Zero changes to the voice script — it just needs to POST here
+
+### WS protocol update
+- [x] `WSMessage` type extended with `speaker?: "user" | "assistant"`
+- [x] `voice_alert` handler in `ResponderDashboardClient` now extracts speaker
+- [x] Transcript state (`VoiceEntry[]`) maintained separately from event log
+- [x] Event log shows `You: ...` / `AI: ...` prefix for voice entries
+
+### Seed accounts updated
+| Email | Password | Tier |
+|-------|----------|------|
+| admin@guardian.com | admin123 | ADMIN |
+| responder@guardian.com | resp123 | RESPONDER, AUTHORIZED |
+| responder2@guardian.com | resp456 | RESPONDER, UNAUTHORIZED |
+
+## Phase 5 — Incident-Aware Event Log & Context-Aware Voice Bot ✅
+
+### Event Log (incident-scoped)
+- [x] `setEventLog([])` called on every new `fall_alert` or `sos_alert` WS message
+- [x] Event log always shows only the **current incident's** timeline — no cross-incident noise
+- [x] All subsequent events (ACK, status changes, voice exchanges) append to this fresh log
+
+### Context-Aware Voice Bot
+- [x] `onCallStart` in `ResponderDashboardClient` now passes `activeAlert` data to `POST /call/start`:
+  ```ts
+  incident: {
+    type:          activeAlert.type.toUpperCase(),
+    person_id:     activeAlert.personId ?? 0,
+    ar:            activeAlert.ar         ?? 0,
+    down_duration: activeAlert.downDuration ?? 0,
+    status:        incidentStatus,
+  }
+  ```
+- [x] `CallStartPayload` in `server.py` extended with `incident: IncidentContext = None`
+- [x] `IncidentContext` Pydantic model: type, person_id, ar, down_duration, status
+- [x] `_build_incident_block()` function generates a plain-text clinical context block from incident data
+- [x] AR interpretation: < 0.5 = HIGH risk (fully horizontal), 0.5–0.7 = MODERATE, > 0.7 = LOW
+- [x] Down-duration interpretation: ≥ 30s = CRITICAL, ≥ 10s = HIGH, < 10s = MODERATE
+- [x] Incident block prepended to system prompt — bot immediately knows situation type, severity
+- [x] Bot can answer "what happened?", "how serious is it?", "what should I check?"
+
+### ChatPanel Incident Badge
+- [x] `activeIncident` prop added to `ChatPanel` (type `ActiveIncident | null`)
+- [x] Idle call launcher shows incident badge when fall/SOS is active:
+  - FALL: red-tinted card with person ID, AR, down duration + "Bot is briefed on this incident"
+  - SOS: amber-tinted card with alert type
+- [x] Call button pulse ring changes from green to red when incident is active
+- [x] Button label: "Start voice call" → "Brief AI on incident"
+- [x] Subtitle: "Clinical guidance enabled" → "Clinical guidance · incident aware"
+
 ## Known Limitations / TODO
 - Twilio escalation is DB-only (no actual SMS sending)
-- Camera page reuses detection settings (functional, not visual split)
-- ANTHROPIC_API_KEY must be real for chat/report features
-- VoiceLog component exists but is commented out (pending chatbot integration work)
+- `ANTHROPIC_API_KEY` must be real for incident report and voice features
+- `afplay` TTS playback is macOS-only; needs `mpg123`/`ffplay` for Linux/Windows
 
 ## Styling Notes
 - **Color system**: All hardcoded hex values replaced with semantic Tailwind tokens (`text-danger`, `bg-surface`, `border-line`, etc.)

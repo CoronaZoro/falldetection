@@ -7,8 +7,12 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const incident = await prisma.incident.findUnique({
-    where: { id: params.id },
-    include: { user: { select: { name: true, email: true } } },
+    where:   { id: params.id },
+    include: {
+      user:        { select: { name: true, email: true } },
+      logs:        { orderBy: { timestamp: "asc" } },
+      transcripts: { orderBy: { timestamp: "asc" } },
+    },
   });
   if (!incident) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json(incident);

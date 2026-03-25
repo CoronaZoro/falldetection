@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from "react";
 import StatusBadge from "@/components/StatusBadge";
-import { UserPlus, Pencil, Trash2, X, Check } from "lucide-react";
+import { UserPlus, Pencil, Trash2, X, Check, ShieldCheck, ShieldOff } from "lucide-react";
 
 interface UserRow {
   id: string; name: string; email: string;
   role: "ADMIN" | "RESPONDER"; phone: string | null;
-  isActive: boolean; createdAt: string;
+  isAuthorized: boolean; isActive: boolean; createdAt: string;
 }
 
 const inputCls = "w-full bg-page border border-line rounded px-3 py-2 text-fg text-xs outline-none focus:border-info transition-colors";
@@ -18,7 +18,7 @@ export default function AdminUsersClient() {
   const [loading, setLoading]     = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editUser, setEditUser]   = useState<UserRow | null>(null);
-  const [form, setForm]           = useState({ name: "", email: "", password: "", role: "RESPONDER", phone: "" });
+  const [form, setForm]           = useState({ name: "", email: "", password: "", role: "RESPONDER", phone: "", isAuthorized: false });
   const [saving, setSaving]       = useState(false);
   const [error, setError]         = useState("");
 
@@ -31,14 +31,14 @@ export default function AdminUsersClient() {
 
   function openCreate() {
     setEditUser(null);
-    setForm({ name: "", email: "", password: "", role: "RESPONDER", phone: "" });
+    setForm({ name: "", email: "", password: "", role: "RESPONDER", phone: "", isAuthorized: false });
     setError("");
     setShowModal(true);
   }
 
   function openEdit(u: UserRow) {
     setEditUser(u);
-    setForm({ name: u.name, email: u.email, password: "", role: u.role, phone: u.phone ?? "" });
+    setForm({ name: u.name, email: u.email, password: "", role: u.role, phone: u.phone ?? "", isAuthorized: u.isAuthorized });
     setError("");
     setShowModal(true);
   }
@@ -49,8 +49,8 @@ export default function AdminUsersClient() {
       const method = editUser ? "PUT" : "POST";
       const url    = editUser ? `/api/admin/users/${editUser.id}` : "/api/admin/users";
       const body   = editUser
-        ? { name: form.name, email: form.email, role: form.role, phone: form.phone || null, ...(form.password && { password: form.password }) }
-        : { name: form.name, email: form.email, password: form.password, role: form.role, phone: form.phone || null };
+        ? { name: form.name, email: form.email, role: form.role, phone: form.phone || null, isAuthorized: form.isAuthorized, ...(form.password && { password: form.password }) }
+        : { name: form.name, email: form.email, password: form.password, role: form.role, phone: form.phone || null, isAuthorized: form.isAuthorized };
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (!res.ok) { setError((await res.json()).error ?? "Failed"); return; }
       setShowModal(false); load();
@@ -70,6 +70,8 @@ export default function AdminUsersClient() {
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm((p) => ({ ...p, [k]: e.target.value }));
+  const fBool = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((p) => ({ ...p, [k]: e.target.checked }));
 
   return (
     <div className='flex flex-col gap-6'>
@@ -91,7 +93,7 @@ export default function AdminUsersClient() {
           <table className='w-full border-collapse text-xs'>
             <thead>
               <tr className='border-b border-line'>
-                {["Name", "Email", "Role", "Status", "Joined", "Actions"].map((h) => (
+                {["Name", "Email", "Role", "Access", "Status", "Joined", "Actions"].map((h) => (
                   <th key={h} className='py-2.5 px-3 text-left section-label'>{h}</th>
                 ))}
               </tr>
@@ -107,6 +109,16 @@ export default function AdminUsersClient() {
                     <td className='py-2.5 px-3 text-fg font-medium'>{u.name}</td>
                     <td className='py-2.5 px-3 text-fg-muted'>{u.email}</td>
                     <td className='py-2.5 px-3'><StatusBadge status={u.role} /></td>
+                    <td className='py-2.5 px-3'>
+                      {u.role === "RESPONDER" ? (
+                        <span className={`flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide ${u.isAuthorized ? "text-success" : "text-warning"}`}>
+                          {u.isAuthorized ? <ShieldCheck size={11} /> : <ShieldOff size={11} />}
+                          {u.isAuthorized ? "Authorized" : "Unauthorized"}
+                        </span>
+                      ) : (
+                        <span className='text-[10px] text-fg-muted'>—</span>
+                      )}
+                    </td>
                     <td className='py-2.5 px-3'><StatusBadge status={u.isActive ? "ONLINE" : "OFFLINE"} /></td>
                     <td className='py-2.5 px-3 text-fg-muted font-mono'>{new Date(u.createdAt).toLocaleDateString()}</td>
                     <td className='py-2.5 px-3'>
@@ -157,6 +169,21 @@ export default function AdminUsersClient() {
                 </select>
               </div>
               <div><label className={labelCls}>Phone (optional)</label><input type='tel' className={inputCls} value={form.phone} onChange={f("phone")} /></div>
+              {form.role === "RESPONDER" && (
+                <div className='flex items-center gap-2.5'>
+                  <input
+                    id='isAuthorized'
+                    type='checkbox'
+                    checked={form.isAuthorized}
+                    onChange={fBool("isAuthorized")}
+                    className='w-3.5 h-3.5 accent-success cursor-pointer'
+                  />
+                  <label htmlFor='isAuthorized' className='text-xs text-fg cursor-pointer'>
+                    Authorized healthcare provider
+                    <span className='block section-label mt-0'>Can receive clinical first-aid guidance via voice</span>
+                  </label>
+                </div>
+              )}
             </div>
 
             <div className='flex gap-2 mt-5'>
