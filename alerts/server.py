@@ -17,6 +17,9 @@ try:
     load_dotenv()
 except ImportError:
     pass
+
+# How many seconds without an ACK before escalation fires
+_ESCALATION_TIMEOUT_SECS = 15
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -35,8 +38,7 @@ app.add_middleware(
 # Track connected dashboards
 connections: list[WebSocket] = []
 
-# Track pending acknowledgements
-# event_id → {"ts": float, "timer": threading.Timer}
+# Track pending acknowledgements — event_id → {"ts": float, "timer": threading.Timer}
 pending: dict = {}
 
 # MJPEG frame buffer — written by main OpenCV thread, read by /video endpoint
@@ -126,8 +128,8 @@ def broadcast_fall(person_id: int, ar: float, down_duration: float):
     }
     _broadcast(payload)
 
-    # Start 15s acknowledgement timer
-    timer = threading.Timer(15.0, _escalate, args=(event_id,))
+    # Start escalation timer
+    timer = threading.Timer(_ESCALATION_TIMEOUT_SECS, _escalate, args=(event_id,))
     timer.daemon = True
     timer.start()
     pending[event_id] = {"ts": time.time(), "timer": timer}
@@ -144,6 +146,12 @@ def broadcast_sos(ts: float):
         "message":   "Manual SOS gesture detected",
     }
     _broadcast(payload)
+
+    # Start escalation timer for SOS as well
+    timer = threading.Timer(_ESCALATION_TIMEOUT_SECS, _escalate, args=(event_id,))
+    timer.daemon = True
+    timer.start()
+    pending[event_id] = {"ts": ts, "timer": timer}
     print(f"[Server] ✊ SOS alert sent: {event_id}")
 
 
@@ -297,6 +305,17 @@ _current_voice    = _EDGE_VOICE_MAP["English"]
 _current_stt_lang = _STT_LANG_MAP["English"]
 _current_rate     = _DEFAULT_RATE
 
+# ── Microphone detection tuning ───────────────────────────────────────────────
+# energy_threshold : minimum audio energy level to count as speech (higher = needs
+#   louder speech, fewer false triggers from ambient noise). speechrecognition
+#   default is 300; we default to 400 for a slightly quieter environment.
+# pause_threshold  : seconds of silence after speech before the phrase is
+#   considered complete and sent to Google STT. Higher = waits longer, useful
+#   when the responder takes short pauses mid-sentence. Default 0.8s in sr;
+#   we default to 1.2s to avoid cutting off naturally-paced speech.
+_current_energy_threshold: int   = 400
+_current_pause_threshold:  float = 1.2
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SECTION D: INTERRUPTIBLE TTS SPEAKER
@@ -408,6 +427,8 @@ class CallStartPayload(BaseModel):
     is_authorized: bool            = False
     speed:         str             = "1x"
     incident:      IncidentContext = None
+    sensitivity:   int             = 400   # energy_threshold (100–3000)
+    pause_after:   float           = 1.2   # pause_threshold in seconds (0.5–3.0)
 
 
 class CallSettingsPayload(BaseModel):
@@ -417,8 +438,10 @@ class CallSettingsPayload(BaseModel):
     Only fields that are provided (non-None) are updated. Either or both
     can be changed independently.
     """
-    language: str | None = None   # new language name, e.g. "Thai"
-    speed:    str | None = None   # new speed label, e.g. "1.5x"
+    language:    str   | None = None   # new language name, e.g. "Thai"
+    speed:       str   | None = None   # new speed label, e.g. "1.5x"
+    sensitivity: int   | None = None   # new energy_threshold, e.g. 800
+    pause_after: float | None = None   # new pause_threshold in seconds, e.g. 2.0
 
 
 @app.post("/call/start")
@@ -431,15 +454,18 @@ async def start_call(payload: CallStartPayload):
 
     Returns {"ok": False} if a call is already running.
     """
-    global _voice_active, _current_lang, _current_voice, _current_stt_lang, _current_rate
+    global _voice_active, _current_lang, _current_voice, _current_stt_lang, _current_rate, \
+           _current_energy_threshold, _current_pause_threshold
     if _voice_active:
         return {"ok": False, "error": "Call already active"}
 
     # Initialise live settings from payload so the loop starts with correct values
-    _current_lang     = payload.language
-    _current_voice    = _EDGE_VOICE_MAP.get(payload.language, "en-US-JennyNeural")
-    _current_stt_lang = _STT_LANG_MAP.get(payload.language, "en-US")
-    _current_rate     = _SPEED_RATE_MAP.get(payload.speed, _DEFAULT_RATE)
+    _current_lang              = payload.language
+    _current_voice             = _EDGE_VOICE_MAP.get(payload.language, "en-US-JennyNeural")
+    _current_stt_lang          = _STT_LANG_MAP.get(payload.language, "en-US")
+    _current_rate              = _SPEED_RATE_MAP.get(payload.speed, _DEFAULT_RATE)
+    _current_energy_threshold  = payload.sensitivity
+    _current_pause_threshold   = payload.pause_after
 
     _voice_active = True
     threading.Thread(
@@ -488,7 +514,8 @@ async def update_call_settings(payload: CallSettingsPayload):
     Can be called even when no call is active — settings are stored and will
     apply when the next call starts.
     """
-    global _current_lang, _current_voice, _current_stt_lang, _current_rate
+    global _current_lang, _current_voice, _current_stt_lang, _current_rate, \
+           _current_energy_threshold, _current_pause_threshold
     if payload.language:
         _current_lang     = payload.language
         _current_voice    = _EDGE_VOICE_MAP.get(payload.language, "en-US-JennyNeural")
@@ -497,6 +524,12 @@ async def update_call_settings(payload: CallSettingsPayload):
     if payload.speed:
         _current_rate = _SPEED_RATE_MAP.get(payload.speed, _DEFAULT_RATE)
         print(f"[Voice] ⏩ Speed → {payload.speed} ({_current_rate})")
+    if payload.sensitivity is not None:
+        _current_energy_threshold = payload.sensitivity
+        print(f"[Voice] 🎚️ Sensitivity → {payload.sensitivity}")
+    if payload.pause_after is not None:
+        _current_pause_threshold = payload.pause_after
+        print(f"[Voice] ⏳ Pause after → {payload.pause_after}s")
     return {"ok": True}
 
 
@@ -581,16 +614,6 @@ def _voice_loop(is_authorized: bool, incident: "IncidentContext | None" = None) 
         _broadcast({"type": "call_status", "callStatus": "idle", "timestamp": time.time()})
         return
 
-    # ── Build system prompt ──────────────────────────────────────────────────
-    # Base prompt is selected by authorization tier; incident block is appended
-    # if a fall/SOS was active when the call started.
-    base_prompt = (
-        _AUTHORIZED_PROMPT if is_authorized else _UNAUTHORIZED_PROMPT
-    ).format(location=_LOCATION, language=_current_lang)
-
-    incident_block = _build_incident_block(incident)
-    system_prompt  = f"{base_prompt}\n\n{incident_block}".strip() if incident_block else base_prompt
-
     # ── Verify API key ───────────────────────────────────────────────────────
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
@@ -636,6 +659,14 @@ def _voice_loop(is_authorized: bool, incident: "IncidentContext | None" = None) 
         while _voice_active:
             try:
                 # ── STEP A: Listen ───────────────────────────────────────────
+                # Apply mic detection settings each iteration so mid-call
+                # changes from /call/settings take effect immediately.
+                # dynamic_energy_threshold=False keeps our manual value stable
+                # instead of auto-adjusting based on ambient noise.
+                recognizer.energy_threshold       = _current_energy_threshold
+                recognizer.dynamic_energy_threshold = False
+                recognizer.pause_threshold        = _current_pause_threshold
+
                 # timeout=15  → give up listening after 15s of silence
                 # phrase_time_limit=30 → cut audio capture at 30s maximum
                 audio = recognizer.listen(source, timeout=15, phrase_time_limit=30)
@@ -652,6 +683,16 @@ def _voice_loop(is_authorized: bool, incident: "IncidentContext | None" = None) 
                     history = history[-_MAX_HISTORY:]
 
                 # ── STEP C: Claude Haiku (streaming) ─────────────────────────
+                # System prompt is rebuilt each iteration so that mid-call
+                # language changes (from /call/settings) take effect immediately.
+                # The language instruction also tells Claude to auto-detect the
+                # user's spoken language and reply in it.
+                _base = (
+                    _AUTHORIZED_PROMPT if is_authorized else _UNAUTHORIZED_PROMPT
+                ).format(location=_LOCATION, language=_current_lang)
+                _inc_block = _build_incident_block(incident)
+                system_prompt = f"{_base}\n\n{_inc_block}".strip() if _inc_block else _base
+
                 # Streaming is used so the reply is available as fast as possible.
                 # We break early if _voice_active is cleared (Stop Call pressed).
                 chunks: list[str] = []
@@ -739,10 +780,10 @@ def _handle_ack(event_id: str):
 
 
 def _escalate(event_id: str):
+    """Fires when no responder acknowledges within _ESCALATION_TIMEOUT_SECS."""
     if event_id in pending:
         del pending[event_id]
-        print(f"[Server] ⏰ No ACK in 15s — would trigger Twilio: {event_id}")
-        # Twilio call goes here later
+        print(f"[Server] ⏰ No ACK in {_ESCALATION_TIMEOUT_SECS}s — escalation triggered: {event_id}")
 
 
 # ── Run server ────────────────────────────────────────────

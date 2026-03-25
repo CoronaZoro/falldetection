@@ -26,6 +26,28 @@ type Language = (typeof LANGUAGES)[number];
 const SPEEDS = ["0.5x", "0.75x", "1x", "1.25x", "1.5x", "2x"] as const;
 type Speed = (typeof SPEEDS)[number];
 
+// Sensitivity → energy_threshold (how loud audio must be to register as speech)
+const SENSITIVITIES = ["Low", "Medium", "High", "Very High"] as const;
+type Sensitivity = (typeof SENSITIVITIES)[number];
+const SENSITIVITY_MAP: Record<Sensitivity, number> = {
+  Low:        200,   // picks up quiet speech; more sensitive to noise
+  Medium:     400,   // default — balanced for a typical indoor environment
+  High:       800,   // requires clearly-spoken speech; fewer false triggers
+  "Very High": 1500, // only loud clear speech; best in a noisy environment
+};
+
+// Pause-after-speech → pause_threshold (silence before phrase is sent)
+const PAUSES = ["0.5s", "0.8s", "1.2s", "1.5s", "2s", "3s"] as const;
+type Pause = (typeof PAUSES)[number];
+const PAUSE_MAP: Record<Pause, number> = {
+  "0.5s": 0.5,
+  "0.8s": 0.8,
+  "1.2s": 1.2,
+  "1.5s": 1.5,
+  "2s":   2.0,
+  "3s":   3.0,
+};
+
 /** Typewriter delay (ms per character). Fixed — keeps text readable regardless of TTS speed. */
 const CHAR_DELAY_MS = 22;
 
@@ -44,11 +66,11 @@ interface Props {
   isAuthorized: boolean;
   transcript: VoiceEntry[]; // all entries (user + AI), already committed
   callActive: boolean;
-  onCallStart: (lang: Language, speed: Speed) => Promise<void>;
+  onCallStart: (lang: Language, speed: Speed, sensitivity: number, pauseAfter: number) => Promise<void>;
   onCallStop: () => Promise<void>;
   language: Language;
   speed: Speed;
-  onCallSettings: (lang: Language, speed: Speed) => Promise<void>;
+  onCallSettings: (lang: Language, speed: Speed, sensitivity: number, pauseAfter: number) => Promise<void>;
   activeIncident: ActiveIncident | null;
   incidentUnlocked: boolean; // true once first incident fires this session
   isThinking: boolean; // AI is generating → show "..." dots
@@ -74,8 +96,10 @@ export default function ChatPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Local picker state — synced from props but editable locally before confirming
-  const [localLang, setLocalLang] = useState<Language>(language);
-  const [localSpeed, setLocalSpeed] = useState<Speed>(speed);
+  const [localLang, setLocalLang]           = useState<Language>(language);
+  const [localSpeed, setLocalSpeed]         = useState<Speed>(speed);
+  const [localSens, setLocalSens]           = useState<Sensitivity>("Medium");
+  const [localPause, setLocalPause]         = useState<Pause>("1.2s");
 
   // ── In-place typewriter state ─────────────────────────────────────────────
   // We track the timestamp of the AI entry currently being animated and how
@@ -135,12 +159,22 @@ export default function ChatPanel({
   // ── Handlers ─────────────────────────────────────────────────────────────
   function handleLangChange(lang: Language) {
     setLocalLang(lang);
-    onCallSettings(lang, localSpeed);
+    onCallSettings(lang, localSpeed, SENSITIVITY_MAP[localSens], PAUSE_MAP[localPause]);
   }
 
   function handleSpeedChange(spd: Speed) {
     setLocalSpeed(spd);
-    onCallSettings(localLang, spd);
+    onCallSettings(localLang, spd, SENSITIVITY_MAP[localSens], PAUSE_MAP[localPause]);
+  }
+
+  function handleSensChange(sens: Sensitivity) {
+    setLocalSens(sens);
+    onCallSettings(localLang, localSpeed, SENSITIVITY_MAP[sens], PAUSE_MAP[localPause]);
+  }
+
+  function handlePauseChange(pause: Pause) {
+    setLocalPause(pause);
+    onCallSettings(localLang, localSpeed, SENSITIVITY_MAP[localSens], PAUSE_MAP[pause]);
   }
 
   const hasTranscript = transcript.length > 0 || isThinking;
@@ -289,9 +323,54 @@ export default function ChatPanel({
             ))}
           </div>
 
+          {/* Mic detection settings */}
+          <div className='w-full border-t border-line/50 pt-2.5 flex flex-col gap-2'>
+            <p className='text-[10px] text-fg-muted text-center uppercase tracking-wide'>Mic Detection</p>
+
+            {/* Sensitivity */}
+            <div className='flex flex-col gap-1'>
+              <p className='text-[10px] text-fg-muted pl-0.5'>Sensitivity</p>
+              <div className='flex items-center gap-1 flex-wrap'>
+                {SENSITIVITIES.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setLocalSens(s)}
+                    className={`px-2 py-0.5 rounded text-[10px] border cursor-pointer transition-colors ${
+                      localSens === s
+                        ? "bg-info/15 border-info/40 text-info"
+                        : "bg-transparent border-line text-fg-muted hover:text-fg"
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Pause after speech */}
+            <div className='flex flex-col gap-1'>
+              <p className='text-[10px] text-fg-muted pl-0.5'>Pause after speech</p>
+              <div className='flex items-center gap-1 flex-wrap'>
+                {PAUSES.map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setLocalPause(p)}
+                    className={`px-2 py-0.5 rounded text-[10px] font-mono border cursor-pointer transition-colors ${
+                      localPause === p
+                        ? "bg-info/15 border-info/40 text-info"
+                        : "bg-transparent border-line text-fg-muted hover:text-fg"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
           {/* Call button */}
           <button
-            onClick={() => onCallStart(localLang, localSpeed)}
+            onClick={() => onCallStart(localLang, localSpeed, SENSITIVITY_MAP[localSens], PAUSE_MAP[localPause])}
             className={`relative flex items-center justify-center w-14 h-14 rounded-full cursor-pointer transition-all hover:scale-105 active:scale-95 ${
               activeIncident
                 ? "bg-danger/15 border border-danger/30 hover:bg-danger/25"
@@ -384,52 +463,64 @@ export default function ChatPanel({
         <div className='shrink-0 border-t border-line px-3 py-2'>
           {callActive ? (
             /* ── Active call controls ──────────────────────────────────── */
-            <div className='flex items-center justify-between gap-2'>
-              {/* Pulsing mic indicator */}
-              <div className='flex items-center gap-1.5'>
-                <div className='relative w-7 h-7 flex items-center justify-center'>
-                  <span className='absolute inset-0 rounded-full bg-danger/10 animate-ping' />
-                  <Mic size={13} className='text-danger z-10' />
+            <div className='flex flex-col gap-1.5'>
+              {/* Row 1: mic indicator + language + speed + end */}
+              <div className='flex items-center justify-between gap-2'>
+                <div className='flex items-center gap-1.5'>
+                  <div className='relative w-7 h-7 flex items-center justify-center'>
+                    <span className='absolute inset-0 rounded-full bg-danger/10 animate-ping' />
+                    <Mic size={13} className='text-danger z-10' />
+                  </div>
+                  <span className='text-[10px] text-fg-muted'>Listening…</span>
                 </div>
-                <span className='text-[10px] text-fg-muted'>Listening…</span>
+                <select
+                  value={localLang}
+                  onChange={(e) => handleLangChange(e.target.value as Language)}
+                  className='bg-page border border-line rounded px-1.5 py-1 text-[10px] text-fg outline-none focus:border-info transition-colors cursor-pointer'
+                >
+                  {LANGUAGES.map((l) => (
+                    <option key={l} value={l}>{l}</option>
+                  ))}
+                </select>
+                <select
+                  value={localSpeed}
+                  onChange={(e) => handleSpeedChange(e.target.value as Speed)}
+                  className='bg-page border border-line rounded px-1.5 py-1 text-[10px] font-mono text-fg outline-none focus:border-info transition-colors cursor-pointer'
+                >
+                  {SPEEDS.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={onCallStop}
+                  className='flex items-center gap-1 bg-danger/15 hover:bg-danger/25 border border-danger/30 rounded-full px-2.5 py-1.5 cursor-pointer transition-all active:scale-95'
+                >
+                  <PhoneOff size={11} className='text-danger' />
+                  <span className='text-[10px] font-semibold text-danger'>End</span>
+                </button>
               </div>
-
-              {/* Mid-call language selector */}
-              <select
-                value={localLang}
-                onChange={(e) => handleLangChange(e.target.value as Language)}
-                className='bg-page border border-line rounded px-1.5 py-1 text-[10px] text-fg outline-none focus:border-info transition-colors cursor-pointer'
-              >
-                {LANGUAGES.map((l) => (
-                  <option key={l} value={l}>
-                    {l}
-                  </option>
-                ))}
-              </select>
-
-              {/* Mid-call speed selector */}
-              <select
-                value={localSpeed}
-                onChange={(e) => handleSpeedChange(e.target.value as Speed)}
-                className='bg-page border border-line rounded px-1.5 py-1 text-[10px] font-mono text-fg outline-none focus:border-info transition-colors cursor-pointer'
-              >
-                {SPEEDS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-
-              {/* End call button */}
-              <button
-                onClick={onCallStop}
-                className='flex items-center gap-1 bg-danger/15 hover:bg-danger/25 border border-danger/30 rounded-full px-2.5 py-1.5 cursor-pointer transition-all active:scale-95'
-              >
-                <PhoneOff size={11} className='text-danger' />
-                <span className='text-[10px] font-semibold text-danger'>
-                  End
-                </span>
-              </button>
+              {/* Row 2: mic detection settings */}
+              <div className='flex items-center gap-1.5'>
+                <span className='text-[10px] text-fg-muted shrink-0'>Mic:</span>
+                <select
+                  value={localSens}
+                  onChange={(e) => handleSensChange(e.target.value as Sensitivity)}
+                  className='bg-page border border-line rounded px-1.5 py-1 text-[10px] text-fg outline-none focus:border-info transition-colors cursor-pointer flex-1'
+                >
+                  {SENSITIVITIES.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+                <select
+                  value={localPause}
+                  onChange={(e) => handlePauseChange(e.target.value as Pause)}
+                  className='bg-page border border-line rounded px-1.5 py-1 text-[10px] font-mono text-fg outline-none focus:border-info transition-colors cursor-pointer flex-1'
+                >
+                  {PAUSES.map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           ) : hasTranscript ? (
             /* ── Idle with history: compact restart row ────────────────── */
@@ -457,7 +548,7 @@ export default function ChatPanel({
                 ))}
               </select>
               <button
-                onClick={() => onCallStart(localLang, localSpeed)}
+                onClick={() => onCallStart(localLang, localSpeed, SENSITIVITY_MAP[localSens], PAUSE_MAP[localPause])}
                 className='flex items-center gap-1.5 bg-success/15 hover:bg-success/25 border border-success/30 rounded-full px-3 py-1.5 cursor-pointer transition-all active:scale-95'
               >
                 <Phone size={11} className='text-success' />

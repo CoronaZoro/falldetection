@@ -7,9 +7,9 @@ import EventLog from "@/components/EventLog";
 import CountdownBar from "@/components/CountdownBar";
 import StatusBadge from "@/components/StatusBadge";
 import ChatPanel from "@/components/responder/ChatPanel";
-// import VoiceLog from "@/components/responder/VoiceLog";
+import { useIncidentContext } from "@/components/responder/IncidentContext";
 import {
-  Wifi, WifiOff, Activity, Users, CheckCircle, ChevronRight,
+  Wifi, WifiOff, Activity, Users, CheckCircle, ChevronRight, AlertTriangle,
 } from "lucide-react";
 import { colors, rgba } from "@/lib/colors";
 import type { WSMessage, EventLogEntry, IncidentStatus, VoiceEntry } from "@/types";
@@ -35,9 +35,11 @@ interface Props {
 let eventCounter = 0;
 
 export default function ResponderDashboardClient({ userId, userName, isAuthorized }: Props) {
-  const seenMids         = useRef<Set<number>>(new Set());
-  const incidentIdRef    = useRef<string | null>(null);   // always-current for async callbacks
-  const incidentEverFired = useRef(false);                // locks ChatPanel until first incident
+  const seenMids          = useRef<Set<number>>(new Set());
+  const incidentIdRef     = useRef<string | null>(null);
+  const incidentEverFired = useRef(false);
+  const { setHasActiveIncident } = useIncidentContext();
+
   const [systemState, setSystemState] = useState("STABLE");
   const [personsDetected, setPersons] = useState(0);
   const [activeAlert, setActiveAlert] = useState<Alert | null>(null);
@@ -48,7 +50,9 @@ export default function ResponderDashboardClient({ userId, userName, isAuthorize
   const [callActive,  setCallActive] = useState(false);
   const [language,    setLanguage]   = useState<ChatLanguage>("English");
   const [speed,       setSpeed]      = useState<ChatSpeed>("1x");
-  const [isThinking,  setIsThinking] = useState(false);   // AI is generating — show "..."
+  const [isThinking,  setIsThinking] = useState(false);
+  // Pending resolve — set when user clicks Resolved/False Alarm, cleared on confirm/cancel
+  const [pendingResolve, setPendingResolve] = useState<IncidentStatus | null>(null);
 
   const API_URL = (process.env.NEXT_PUBLIC_DETECTION_WS_URL ?? "ws://localhost:8765/ws")
     .replace("ws://", "http://").replace("/ws", "");
@@ -106,9 +110,11 @@ export default function ResponderDashboardClient({ userId, userName, isAuthorize
       }
       if (msg.type === "fall_alert" && msg.event_id) {
         incidentEverFired.current = true;
-        setEventLog([]);   // start fresh log for new incident
+        setHasActiveIncident(true);
+        setEventLog([]);
         setTranscript([]);
         setIsThinking(false);
+        setPendingResolve(null);
         incidentIdRef.current = null;
         setStatus("UNACKNOWLEDGED");
         setIncidentId(null);
@@ -150,9 +156,11 @@ export default function ResponderDashboardClient({ userId, userName, isAuthorize
       }
       if (msg.type === "sos_alert" && msg.event_id) {
         incidentEverFired.current = true;
-        setEventLog([]);   // start fresh log for new incident
+        setHasActiveIncident(true);
+        setEventLog([]);
         setTranscript([]);
         setIsThinking(false);
+        setPendingResolve(null);
         incidentIdRef.current = null;
         setStatus("UNACKNOWLEDGED");
         setIncidentId(null);
@@ -218,7 +226,10 @@ export default function ResponderDashboardClient({ userId, userName, isAuthorize
 
   const { status: wsStatus, send } = useWebSocket(handleMessage);
 
-  const onCallStart = useCallback(async (lang: string, spd: string) => {
+  const onCallStart = useCallback(async (lang: string, spd: string, sensitivity: number, pauseAfter: number) => {
+    // Clear dedup set so this call's MIDs (which restart from 1) aren't
+    // mistakenly dropped as duplicates of the previous call's messages.
+    seenMids.current.clear();
     setCallActive(true);
     setTranscript([]);
     setIsThinking(false);
@@ -229,6 +240,8 @@ export default function ResponderDashboardClient({ userId, userName, isAuthorize
         body:    JSON.stringify({
           language:      lang,
           speed:         spd,
+          sensitivity,
+          pause_after:   pauseAfter,
           is_authorized: isAuthorized,
           incident:      activeAlert
             ? {
@@ -250,15 +263,15 @@ export default function ResponderDashboardClient({ userId, userName, isAuthorize
     try { await fetch(`${API_URL}/call/stop`, { method: "POST" }); } catch { /* non-critical */ }
   }, [API_URL]);
 
-  // Mid-call language / speed change — updates server globals live
-  const onCallSettings = useCallback(async (lang: ChatLanguage, spd: ChatSpeed) => {
+  // Mid-call language / speed / mic change — updates server globals live
+  const onCallSettings = useCallback(async (lang: ChatLanguage, spd: ChatSpeed, sensitivity: number, pauseAfter: number) => {
     setLanguage(lang);
     setSpeed(spd);
     try {
       await fetch(`${API_URL}/call/settings`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ language: lang, speed: spd }),
+        body:    JSON.stringify({ language: lang, speed: spd, sensitivity, pause_after: pauseAfter }),
       });
     } catch {}
   }, [API_URL]);
@@ -293,9 +306,29 @@ export default function ResponderDashboardClient({ userId, userName, isAuthorize
         body: JSON.stringify({ status: newStatus }),
       });
     }
-    if (newStatus === "RESOLVED" || newStatus === "FALSE_ALARM")
-      setTimeout(() => setActiveAlert(null), 800);
-  }, [alertIncidentId, addEvent]);
+    if (newStatus === "RESOLVED" || newStatus === "FALSE_ALARM") {
+      // Stop any active call before full reset
+      if (callActive) {
+        setCallActive(false);
+        fetch(`${API_URL}/call/stop`, { method: "POST" }).catch(() => {});
+      }
+      // Brief delay so "Incident closed" flash is visible, then full reset
+      setTimeout(() => {
+        setActiveAlert(null);
+        setEventLog([]);
+        setTranscript([]);
+        setIsThinking(false);
+        setIncidentId(null);
+        setStatus("UNACKNOWLEDGED");
+        setSystemState("STABLE");
+        setPendingResolve(null);
+        incidentEverFired.current = false;
+        incidentIdRef.current = null;
+        seenMids.current.clear();
+        setHasActiveIncident(false);
+      }, 1500);
+    }
+  }, [alertIncidentId, addEvent, callActive, API_URL, setHasActiveIncident]);
 
   const isAlarming = activeAlert !== null;
   const isFall     = activeAlert?.type === "fall";
@@ -427,15 +460,56 @@ export default function ResponderDashboardClient({ userId, userName, isAuthorize
                         {incidentStatus === "RESPONDING" && (
                           <FlowBtn label='On Scene' color={colors.accent} onClick={() => updateStatus("ON_SCENE")} />
                         )}
-                        {(incidentStatus === "ON_SCENE" || incidentStatus === "RESPONDING") && (
+
+                        {/* Resolve / False Alarm — show confirmation step first */}
+                        {(incidentStatus === "ON_SCENE" || incidentStatus === "RESPONDING") && !pendingResolve && (
                           <>
-                            <FlowBtn label='Resolved'    color={colors.success}  onClick={() => updateStatus("RESOLVED")} />
-                            <FlowBtn label='False Alarm' color={colors.fgMuted}  onClick={() => updateStatus("FALSE_ALARM")} />
+                            <FlowBtn label='Resolved'    color={colors.success} onClick={() => setPendingResolve("RESOLVED")} />
+                            <FlowBtn label='False Alarm' color={colors.fgMuted} onClick={() => setPendingResolve("FALSE_ALARM")} />
                           </>
                         )}
+
+                        {/* Confirmation prompt */}
+                        {pendingResolve && (
+                          <div
+                            className='rounded border p-2.5 flex flex-col gap-2'
+                            style={{
+                              background: rgba(pendingResolve === "RESOLVED" ? colors.success : colors.fgMuted, 0.06),
+                              borderColor: rgba(pendingResolve === "RESOLVED" ? colors.success : colors.fgMuted, 0.2),
+                            }}
+                          >
+                            <div className='flex items-start gap-1.5'>
+                              <AlertTriangle size={11} className='text-fg-muted shrink-0 mt-0.5' />
+                              <p className='text-[11px] text-fg leading-snug'>
+                                {pendingResolve === "RESOLVED"
+                                  ? "Confirm this incident is fully resolved? This will reset the dashboard."
+                                  : "Confirm this was a false alarm? This will reset the dashboard."}
+                              </p>
+                            </div>
+                            <div className='flex gap-1.5'>
+                              <button
+                                onClick={() => { updateStatus(pendingResolve); }}
+                                className='flex-1 py-1.5 rounded text-[11px] font-semibold cursor-pointer transition-opacity hover:opacity-90 border-none'
+                                style={{
+                                  background: pendingResolve === "RESOLVED" ? colors.success : colors.fgMuted,
+                                  color: colors.page,
+                                }}
+                              >
+                                {pendingResolve === "RESOLVED" ? "Confirm Resolved" : "Confirm False Alarm"}
+                              </button>
+                              <button
+                                onClick={() => setPendingResolve(null)}
+                                className='px-3 py-1.5 rounded text-[11px] text-fg-muted border border-line bg-transparent cursor-pointer hover:text-fg transition-colors'
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
                         {(incidentStatus === "RESOLVED" || incidentStatus === "FALSE_ALARM") && (
                           <div className='flex items-center gap-1.5 text-[11px] text-success pt-1'>
-                            <CheckCircle size={12} /> Incident closed
+                            <CheckCircle size={12} /> Incident closed — resetting…
                           </div>
                         )}
                       </div>
