@@ -3,15 +3,28 @@ tests/test_video.py — Hackathon Demo Version
 Shows state machine + AR on screen.
 Press Q to quit.
 """
+
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 import cv2
 import time
+from roboflow import Roboflow
+
+rf = Roboflow(api_key="gTK6jsoaDlJQc9Bz5gDP")
+project = rf.workspace("randys-workspace-de2j3").project("falling-zvpqk-5aafw")
+model = project.version(1).model
+
+
 import threading
 from ultralytics import YOLO
 from core.fall_logic import FallLogic, ALARM, RECOVERY, STABLE, TRANSITION, VALIDATION, INACTIVITY
 from core.sos_gesture import SOSGestureDetector
 from alerts.server import start_server, broadcast_fall, broadcast_sos, broadcast_recovery, update_frame
 
-model   = YOLO("models/best.pt")
+
 logic   = FallLogic()
 sos_det = SOSGestureDetector()
 
