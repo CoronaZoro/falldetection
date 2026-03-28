@@ -1,5 +1,5 @@
-import DetectionSettingsClient from "@/components/admin/DetectionSettingsClient";
+import AdminSettingsClient from "@/components/admin/AdminSettingsClient";
 
 export default function DetectionPage() {
-  return <DetectionSettingsClient />;
+  return <AdminSettingsClient />;
 }

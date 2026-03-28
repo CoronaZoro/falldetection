@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import Providers from "./providers";
 
 export const metadata: Metadata = {
   title: "GUARDIAN — Fall Detection System",
@@ -25,7 +26,7 @@ export default function RootLayout({
           rel='stylesheet'
         />
       </head>
-      <body className='h-full'>{children}</body>
+      <body className='h-full'><Providers>{children}</Providers></body>
     </html>
   );
 }

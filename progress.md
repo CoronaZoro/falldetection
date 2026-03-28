@@ -7,8 +7,10 @@ and a Next.js multi-user dashboard.
 ## Repository Structure
 ```
 falldetection/
-├── alerts/             FastAPI server (WS + MJPEG + voice session endpoints)
-├── core/               Fall detection logic + SOS gesture + legacy voice app
+├── alerts/             FastAPI server + voice module + fall state machine
+│   ├── server.py       Core server — WS, MJPEG, escalation, fall/recovery broadcasts
+│   ├── voice.py        Voice session — WebRTC VAD, STT, Claude, TTS, /call/* routes
+│   └── fall_logic.py   Per-person fall state machine (moved from core/)
 ├── data/               Dataset download scripts
 ├── tests/              Demo entry point (test_video.py)
 ├── training/           YOLO11 fine-tuning script
@@ -27,7 +29,7 @@ python tests/test_video.py
 # Terminal 2 — Dashboard
 cd dashboard && npm run dev
 ```
-> Voice assistant is built into `alerts/server.py` — no separate script needed.
+> Voice assistant is built into `alerts/voice.py` and mounted via `alerts/server.py` — no separate script needed.
 > Start a call from the dashboard's Voice Assistant panel (bottom-right).
 
 ---
@@ -44,6 +46,7 @@ cd dashboard && npm run dev
 - MJPEG video stream at http://localhost:8765/video (annotated with bounding boxes, AR, banners)
 - 15-second ACK timer: if no responder acknowledges, `_escalate()` fires (hookable for future alerting)
 - **SOS hand gesture removed** — `sos_gesture.py` and all SOS detection code scrapped
+- **`core/` package removed** — `fall_logic.py` moved to `alerts/`; entire `core/` directory deleted
 
 ---
 
@@ -79,10 +82,10 @@ cd dashboard && npm run dev
 
 ---
 
-## Phase 3 — Voice AI Assistant (built into server.py) ✅
+## Phase 3 — Voice AI Assistant (`alerts/voice.py`) ✅
 
-Replaced the separate `fall_detection_voice_app.py` process. Voice is now fully managed
-by `alerts/server.py` with a clean REST API.
+Replaced the separate `fall_detection_voice_app.py` process. Voice is now a standalone
+`alerts/voice.py` module with its own `APIRouter`, mounted into `server.py`.
 
 - [x] `InterruptibleSpeaker` class — `threading.Lock`-protected `afplay` subprocess; `stop()` kills audio instantly when user speaks
 - [x] `POST /call/start` — initializes voice session with language, speed, authorization tier, and optional incident context
@@ -94,14 +97,36 @@ by `alerts/server.py` with a clean REST API.
 - [x] Speaking speed: 0.5x / 0.75x / 1x / 1.25x / 1.5x / 2x mapped to Edge TTS rate strings
 - [x] System prompt rebuilt on every loop iteration so language/speed changes take effect on the next response
 - [x] **Auto language detection**: bot responds in whatever language the responder is speaking, regardless of the default setting
-- [x] Readable section comments (STEP A–D) throughout voice functions
+- [x] `init(broadcast_fn)` injection pattern — avoids circular imports; `_broadcast` passed from `server.py` at FastAPI startup
+- [x] `router = APIRouter(tags=["voice"])` mounted in `server.py` via `app.include_router(_voice.router)`
 
 ### Incident Context Injection
 - [x] `_build_incident_block(incident)` — converts AR + down_duration into plain-English risk context prepended to system prompt
 - [x] AR risk: < 0.5 = HIGH, 0.5–0.7 = MODERATE, > 0.7 = LOW
 - [x] Duration risk: ≥ 30s = CRITICAL, ≥ 10s = HIGH, < 10s = MODERATE
-- [x] SOS context: conscious enough to signal, advise checking pain/injury/mobility
 - [x] Bot answers "what happened?", "how serious is it?", "what should I check?" immediately on call start
+
+## Phase 6 — WebRTC VAD ✅
+
+Replaced `sr.Recognizer.listen()` energy-threshold VAD with Google WebRTC VAD for more
+accurate speech boundary detection — prevents cutoff on natural pauses.
+
+- [x] `webrtcvad-wheels` installed — prebuilt, no compiler needed
+- [x] PyAudio stream opened once and held for the entire call (16 kHz / 16-bit / mono)
+- [x] `_capture_utterance()` — 30 ms frame loop; ring-buffer pre-roll (300 ms) prevents onset clipping
+- [x] `on_speech_start` callback — fires exactly once on first speech frame; broadcasts `mic_status: "speaking"` to dashboard
+- [x] 4-level aggressiveness: `_vad_aggressiveness()` maps dashboard sensitivity to 0–3
+- [x] Sensitivity → VAD mapping:
+
+  | Dashboard label | Aggressiveness | Silence threshold |
+  |----------------|---------------|-------------------|
+  | Sensitive | 0 | 100 ms |
+  | Balanced | 1 | 300 ms |
+  | Clear | 2 | 600 ms |
+  | Strict | 3 | 1200 ms |
+
+- [x] `mic_status` WS message: `"listening"` (mic open, waiting) · `"speaking"` (speech onset detected)
+- [x] Server and `tests/test_video.py` import updated: `from alerts.fall_logic import FallLogic`
 
 ---
 
@@ -184,9 +209,11 @@ by `alerts/server.py` with a clean REST API.
 |-----------|-------------|--------|
 | Python → Dashboard | `heartbeat` | persons_detected |
 | Python → Dashboard | `fall_alert` | event_id, person_id, ar, down_duration |
-| Python → Dashboard | `recovery` | person_id |
+| Python → Dashboard | `recovery` | person_id, auto_resolved |
 | Python → Dashboard | `voice_alert` | message, speaker ("user"\|"assistant"), mid (dedup ID) |
 | Python → Dashboard | `call_status` | callStatus ("active"\|"idle") |
+| Python → Dashboard | `mic_status` | status ("listening"\|"speaking") |
+| Python → Dashboard | `escalation` | event_id |
 | Dashboard → Python | `acknowledge` | event_id |
 
 ---

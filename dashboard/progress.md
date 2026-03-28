@@ -22,7 +22,7 @@ dashboard/
 │   │   ├── auth/[...nextauth]/  NextAuth handler
 │   │   ├── chat/route.ts        Claude AI chatbot
 │   │   ├── incidents/           GET/POST incidents
-│   │   │   └── [id]/            GET/PUT + report POST
+│   │   │   └── [id]/            GET/PUT + report POST + log POST + transcript POST
 │   │   └── admin/
 │   │       ├── users/           GET/POST users
 │   │       │   └── [id]/        PUT/DELETE user
@@ -74,7 +74,8 @@ dashboard/
 ├── postcss.config.mjs
 ├── tsconfig.json
 ├── package.json
-└── .env.local                   Environment variables
+├── .env.local                   Runtime environment variables (Next.js)
+└── .env                         Prisma CLI variables (DATABASE_URL only)
 ```
 
 ## Completed Features
@@ -113,8 +114,10 @@ dashboard/
 | Method | Route | Description |
 |--------|-------|-------------|
 | GET/POST | /api/incidents | List / create incidents |
-| GET/PUT | /api/incidents/[id] | Get / update incident |
+| GET/PUT | /api/incidents/[id] | Get (with logs + transcripts) / update incident |
 | POST | /api/incidents/[id]/report | Generate AI report |
+| GET/POST | /api/incidents/[id]/log | Fetch / append incident timeline entries |
+| GET/POST | /api/incidents/[id]/transcript | Fetch / append voice transcript entries |
 | GET/POST | /api/admin/users | List / create users |
 | PUT/DELETE | /api/admin/users/[id] | Edit / delete user |
 | GET/PUT | /api/admin/config | Get / update system config |
@@ -125,7 +128,10 @@ dashboard/
 ```bash
 cd dashboard
 npm install
-npm run db:push          # Create SQLite DB
+# .env.local — for Next.js runtime (copy from .env.local.example and fill in keys)
+# .env — for Prisma CLI (only needs DATABASE_URL)
+echo 'DATABASE_URL="file:./dev.db"' > .env
+npm run db:push          # Create SQLite schema
 npm run db:seed          # Seed admin + responder accounts
 npm run dev              # Start on port 3000
 ```
@@ -262,8 +268,50 @@ Mobile: right col first (alert+chat), left col below (feed+log)
 - [x] Button label: "Start voice call" → "Brief AI on incident"
 - [x] Subtitle: "Clinical guidance enabled" → "Clinical guidance · incident aware"
 
+## Phase 6 — WebRTC VAD Dashboard UI ✅
+
+### Voice Detection Sensitivity Picker
+- [x] `SENSITIVITIES` updated from 4 ad-hoc levels to named VAD aggressiveness tiers:
+  `["Sensitive", "Balanced", "Clear", "Strict"]`
+- [x] `SENSITIVITY_MAP` maps labels to VAD aggressiveness numeric values (100→0 / 300→1 / 600→2 / 1200→3)
+- [x] `SENSITIVITY_HINT` adds a subtitle per level ("Soft voices · quiet room", etc.)
+- [x] Default sensitivity changed to `"Balanced"` (aggressiveness 1, 300 ms pause threshold)
+- [x] Sensitivity picker redesigned as a 2×2 grid with hint subtitles under each option
+- [x] Active call bar label updated: `"Mic:"` → `VAD` badge; select shows level + hint inline
+- [x] Settings panel section renamed "Voice Detection" + `WebRTC VAD` badge; "Pause after speech" → "Silence before send"
+
+### Waveform Animation (speech-only)
+- [x] `micSpeaking` state added to `ResponderDashboardClient` (distinct from `micListening`)
+- [x] `mic_status` WS handler: `"listening"` → `micListening=true, micSpeaking=false`; `"speaking"` → both `true`
+- [x] `ListeningWaveform` component — 7 bars with staggered `vad-bar` CSS animation; shown only when `micSpeaking=true`
+- [x] `@keyframes vad-bar` added to `globals.css` (0%/100% → 3px/0.4 opacity; 50% → 13px/0.95)
+- [x] Idle listening shows muted pulse dot + "listening…" text; waveform only fires on speech onset
+- [x] `micSpeaking` cleared on: user voice_alert received, call stopped
+- [x] `micSpeaking` prop threaded from `ResponderDashboardClient` → `ChatPanel`
+
+---
+
+## Phase 7 — Prisma DB Bug Fixes ✅
+
+### `acknowledgedBy` race condition
+- [x] `acknowledge()` and `updateStatus()` previously used `alertIncidentId` React **state**, which may not yet reflect the newly-created incident when the user clicks quickly
+- [x] Fixed: both functions now read `incidentIdRef.current` (set synchronously when the incident is created in DB) instead of state
+- [x] `alertIncidentId` removed from dependency arrays of both callbacks — refs are stable
+
+### Admin page error handling
+- [x] `AdminUsersClient.load()` — added `if (res.ok)` guard and `try/catch`; non-OK responses no longer set `users` to a non-array, preventing `users.map is not a function` crash
+- [x] `AdminIncidentsClient` fetch — added `.then(r => r.ok ? r.json() : [])` and `Array.isArray` guard; loading state correctly resets on network error
+- [x] `AdminUsersClient` `colSpan` mismatch fixed: 6 → 7 (table has 7 columns: Name / Email / Role / Access / Status / Joined / Actions)
+
+### DB seed and `.env` setup
+- [x] `DATABASE_URL` was only in `.env.local` (loaded by Next.js, not by Prisma CLI or `tsx`)
+- [x] Created `dashboard/.env` with `DATABASE_URL="file:./dev.db"` so `prisma db push` and `db:seed` work without manual env passing
+- [x] `db:seed` and `db:reset` scripts updated to `node --env-file=.env --import=tsx prisma/seed.ts` — runs correctly on Node 20+
+- [x] Users table re-seeded: admin + Responder One (authorized) + Responder Two (unauthorized)
+
+---
+
 ## Known Limitations / TODO
-- Twilio escalation is DB-only (no actual SMS sending)
 - `ANTHROPIC_API_KEY` must be real for incident report and voice features
 - `afplay` TTS playback is macOS-only; needs `mpg123`/`ffplay` for Linux/Windows
 

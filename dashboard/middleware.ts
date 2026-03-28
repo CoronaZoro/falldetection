@@ -32,7 +32,7 @@ export default auth((req) => {
 
   const role = session.user?.role;
 
-  if (pathname.startsWith("/admin") && role !== "ADMIN") {
+  if (pathname.startsWith("/admin/dashboard") && role !== "ADMIN") {
     return NextResponse.redirect(new URL("/responder/dashboard", req.url));
   }
 

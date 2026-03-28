@@ -1,8 +1,8 @@
 # Fall Detection System — GUARDIAN
 
 Real-time AI fall detection and emergency alert system using computer vision + voice AI.
-Detects falls via YOLO object detection, supports manual SOS via hand gesture, voice-activated
-emergency assistant (Claude), and broadcasts everything to a live multi-user web dashboard.
+Detects falls via YOLO object detection, voice-activated emergency assistant (Claude),
+and broadcasts everything to a live multi-user web dashboard.
 
 ## Features
 
@@ -10,6 +10,7 @@ emergency assistant (Claude), and broadcasts everything to a live multi-user web
 - **State machine** — filters false positives using aspect ratio, transition time, and inactivity checks
 - **WebSocket alerts** — real-time broadcasts to connected dashboards on fall or recovery events
 - **MJPEG live feed** — annotated video stream with bounding boxes, AR values, and state banners
+- **WebRTC VAD** — Google WebRTC VAD (via `webrtcvad`) replaces energy-threshold listening; ring-buffer pre-roll prevents onset clipping; 4-level aggressiveness (0=permissive → 3=strict)
 - **Voice AI assistant** — Claude-powered voice chatbot built into the server; authorized/unauthorized tiers; incident-aware context injection
 - **Multi-language voice** — auto-detects and responds in the responder's spoken language (English, Thai, Japanese, Chinese); language and speed changeable mid-call
 - **Incident history** — every incident's timeline, voice transcript, and AI-generated report stored and reviewable
@@ -19,8 +20,8 @@ emergency assistant (Claude), and broadcasts everything to a live multi-user web
 
 - Python 3.11 · OpenCV · Roboflow `inference` SDK (local on-device inference)
 - FastAPI + Uvicorn (WebSocket alert server + MJPEG stream + voice session API)
-- Anthropic SDK (Claude Haiku — voice assistant)
-- Edge TTS + SpeechRecognition + PyAudio (voice I/O)
+- Anthropic SDK (Claude — voice assistant + incident reports)
+- Edge TTS + `webrtcvad-wheels` + PyAudio (voice I/O with WebRTC VAD)
 - Next.js 14 App Router + TypeScript + Tailwind CSS v4 + Prisma + SQLite (web dashboard)
 - NextAuth v5 JWT (role-based access: ADMIN / RESPONDER)
 
@@ -28,11 +29,10 @@ emergency assistant (Claude), and broadcasts everything to a live multi-user web
 
 ```
 falldetection/
-├── core/
-│   ├── fall_logic.py              Fall detection state machine
-│   └── fall_detection_voice_app.py  Standalone voice app (legacy — voice now in server.py)
 ├── alerts/
-│   └── server.py                  FastAPI server — WebSocket, MJPEG, voice session endpoints
+│   ├── server.py                  FastAPI server — WebSocket, MJPEG, escalation, fall/recovery
+│   ├── voice.py                   Voice session module — WebRTC VAD, STT, Claude, TTS
+│   └── fall_logic.py              Per-person fall state machine
 ├── training/
 │   └── train.py                   YOLO11 fine-tuning script
 ├── tests/
@@ -41,8 +41,7 @@ falldetection/
 │   ├── dataset/                   Training data (gitignored)
 │   └── roboflow_download.py       Dataset download script
 ├── models/                        Trained weights (gitignored)
-│   ├── best.pt                    Fine-tuned YOLO11 model
-│   └── hand_landmarker.task       MediaPipe hand landmark model
+│   └── best.pt                    Fine-tuned YOLO11 model
 └── dashboard/                     Next.js web app (GUARDIAN Dashboard)
     ├── app/                       App Router pages + API routes
     ├── components/                UI components (responder + admin + shared)
@@ -64,13 +63,15 @@ source venv/bin/activate        # macOS/Linux
 
 ```bash
 pip install inference fastapi uvicorn opencv-python python-dotenv \
-            anthropic SpeechRecognition pyaudio edge-tts
+            anthropic SpeechRecognition pyaudio webrtcvad-wheels edge-tts
 ```
 
 > **PyAudio on macOS** requires PortAudio first:
 > ```bash
 > brew install portaudio && pip install pyaudio
 > ```
+>
+> `webrtcvad-wheels` provides prebuilt wheels for the Google WebRTC VAD library — no compiler needed.
 
 ### 3. Configure environment
 
@@ -85,7 +86,7 @@ ROBOFLOW_VERSION=1
 
 ### 4. Configure the dashboard
 
-Create `dashboard/.env.local`:
+Create `dashboard/.env.local` (for Next.js at runtime):
 ```
 NEXTAUTH_SECRET=change-me-to-a-random-string
 NEXTAUTH_URL=http://localhost:3000
@@ -95,6 +96,11 @@ DETECTION_WS_URL=ws://localhost:8765/ws
 DETECTION_FEED_URL=http://localhost:8765/video
 NEXT_PUBLIC_DETECTION_WS_URL=ws://localhost:8765/ws
 NEXT_PUBLIC_FEED_URL=http://localhost:8765/video
+```
+
+Also create `dashboard/.env` (for Prisma CLI commands like `db:push` / `db:seed`):
+```
+DATABASE_URL="file:./dev.db"
 ```
 
 ### 5. Download model weights
@@ -174,6 +180,24 @@ python training/train.py
 ```
 
 ## Voice Assistant
+
+### WebRTC VAD
+
+The voice loop uses **Google WebRTC VAD** (`webrtcvad`) instead of energy-threshold silence detection:
+
+- PyAudio stream is held open for the entire call at 16 kHz / 16-bit / mono
+- Audio is classified in 30 ms frames; speech frames trigger capture, silence frames end it
+- A 300 ms ring-buffer **pre-roll** prevents clipping the first syllable
+- 4-level aggressiveness maps to the sensitivity picker on the dashboard:
+
+| Dashboard label | VAD aggressiveness | Pause threshold | Best for |
+|----------------|-------------------|-----------------|----------|
+| Sensitive | 0 | 100 ms | Soft voices, quiet room |
+| Balanced | 1 | 300 ms | Normal speech, indoors |
+| Clear | 2 | 600 ms | Clear speech, some noise |
+| Strict | 3 | 1200 ms | Loud speech, noisy room |
+
+- A `mic_status` WebSocket message fires on speech onset (`"speaking"`) so the dashboard waveform only animates while speech is actively detected — not during the idle listening wait
 
 ### Authorization Tiers
 

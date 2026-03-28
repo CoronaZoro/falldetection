@@ -144,12 +144,12 @@ export default function AdminOverviewClient() {
       {/* Recent incidents */}
       <div className='bg-surface border border-line rounded p-3'>
         <p className='section-label mb-3'>Recent Incidents</p>
-        <div className='overflow-x-auto'>
+        <div className='overflow-auto max-h-64'>
           <table className='w-full border-collapse text-xs'>
             <thead>
               <tr className='border-b border-line'>
                 {["Time", "Type", "Duration", "AR", "Responder", "Status"].map((h) => (
-                  <th key={h} className='py-2 px-3 text-left section-label font-medium'>{h}</th>
+                  <th key={h} className='py-2 px-3 text-left section-label font-medium sticky top-0 bg-surface z-10'>{h}</th>
                 ))}
               </tr>
             </thead>

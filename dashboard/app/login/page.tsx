@@ -7,20 +7,27 @@ import { Shield, Eye, EyeOff, AlertCircle } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email,    setEmail]    = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
-  const [error,    setError]    = useState("");
-  const [loading,  setLoading]  = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
-      const res = await signIn("credentials", { email, password, redirect: false });
+      const res = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+      });
       if (res?.error) setError("Invalid email or password.");
-      else { router.push("/"); router.refresh(); }
+      else {
+        router.push("/");
+        router.refresh();
+      }
     } finally {
       setLoading(false);
     }
@@ -29,15 +36,16 @@ export default function LoginPage() {
   return (
     <div className='min-h-screen bg-page flex items-center justify-center p-4'>
       <div className='w-full max-w-sm'>
-
         {/* Mark */}
         <div className='flex flex-col items-center gap-3 mb-8'>
           <div className='w-10 h-10 bg-surface border border-line rounded-lg flex items-center justify-center'>
             <Shield size={20} className='text-success' />
           </div>
           <div className='text-center'>
-            <h1 className='font-semibold text-base text-fg tracking-widest'>GUARDIAN</h1>
-            <p className='section-label mt-0.5'>Fall Detection System</p>
+            <h1 className='font-semibold text-base text-fg tracking-widest'>
+              GUARDIAN
+            </h1>
+            <p className='section-label mt-0.5'>Health Monitoring System</p>
           </div>
         </div>
 
@@ -55,9 +63,11 @@ export default function LoginPage() {
             <div>
               <label className='section-label mb-1.5 block'>Email</label>
               <input
-                type='email' value={email}
+                type='email'
+                value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder='you@guardian.com' required
+                placeholder='you@guardian.com'
+                required
                 className='w-full bg-page border border-line rounded px-3 py-2 text-sm text-fg outline-none focus:border-info transition-colors placeholder:text-line-muted'
               />
             </div>
@@ -66,9 +76,11 @@ export default function LoginPage() {
               <label className='section-label mb-1.5 block'>Password</label>
               <div className='relative'>
                 <input
-                  type={showPass ? "text" : "password"} value={password}
+                  type={showPass ? "text" : "password"}
+                  value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder='••••••••' required
+                  placeholder='••••••••'
+                  required
                   className='w-full bg-page border border-line rounded px-3 py-2 pr-9 text-sm text-fg outline-none focus:border-info transition-colors placeholder:text-line-muted'
                 />
                 <button
@@ -82,7 +94,8 @@ export default function LoginPage() {
             </div>
 
             <button
-              type='submit' disabled={loading}
+              type='submit'
+              disabled={loading}
               className='w-full bg-info hover:bg-info-dark disabled:opacity-50 disabled:cursor-not-allowed border-none rounded py-2.5 text-white text-sm font-medium cursor-pointer mt-1 transition-colors'
             >
               {loading ? "Signing in…" : "Sign In"}
@@ -93,7 +106,8 @@ export default function LoginPage() {
             <p className='section-label mb-2'>Demo accounts</p>
             <div className='flex flex-col gap-1 text-xs text-fg-muted'>
               <span>admin@guardian.com · admin123</span>
-              <span>responder@guardian.com · resp123</span>
+              <span>responder1@guardian.com · resp123</span>
+              <span>responder2@guardian.com · resp123</span>
             </div>
           </div>
         </div>

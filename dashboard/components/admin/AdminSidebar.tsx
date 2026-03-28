@@ -3,14 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
-import { Shield, LayoutDashboard, Users, Camera, Sliders, FileText, Server, LogOut } from "lucide-react";
+import { Shield, LayoutDashboard, Users, Settings, FileText, Server, LogOut } from "lucide-react";
 
 const NAV = [
   { href: "/admin/dashboard", icon: <LayoutDashboard size={14} />, label: "Overview"  },
   { href: "/admin/users",     icon: <Users size={14} />,           label: "Users"     },
   { href: "/admin/incidents", icon: <FileText size={14} />,        label: "Incidents" },
-  { href: "/admin/detection", icon: <Sliders size={14} />,         label: "Detection" },
-  { href: "/admin/camera",    icon: <Camera size={14} />,          label: "Camera"    },
+  { href: "/admin/detection", icon: <Settings size={14} />,        label: "Settings"  },
   { href: "/admin/system",    icon: <Server size={14} />,          label: "System"    },
 ];
 

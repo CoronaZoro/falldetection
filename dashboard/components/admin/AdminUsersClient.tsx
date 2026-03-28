@@ -91,12 +91,12 @@ export default function AdminUsersClient() {
       </div>
 
       <div className='bg-surface border border-line rounded overflow-hidden'>
-        <div className='overflow-x-auto'>
+        <div className='overflow-auto max-h-[calc(100vh-16rem)]'>
           <table className='w-full border-collapse text-xs'>
             <thead>
               <tr className='border-b border-line'>
                 {["Name", "Email", "Role", "Access", "Status", "Joined", "Actions"].map((h) => (
-                  <th key={h} className='py-2.5 px-3 text-left section-label'>{h}</th>
+                  <th key={h} className='py-2.5 px-3 text-left section-label sticky top-0 bg-surface z-10'>{h}</th>
                 ))}
               </tr>
             </thead>

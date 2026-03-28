@@ -60,7 +60,7 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 alerted_persons: set = set()
 last_heartbeat        = 0.0
 
-print("Starting webcam... Press Q to quit\n")
+print("Starting webcam... Press Ctrl+c to quit\n")
 
 while True:
     ret, frame = cap.read()

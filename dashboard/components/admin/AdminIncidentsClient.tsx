@@ -63,12 +63,12 @@ export default function AdminIncidentsClient() {
       </div>
 
       <div className='bg-surface border border-line rounded overflow-hidden'>
-        <div className='overflow-x-auto'>
+        <div className='overflow-auto max-h-[calc(100vh-16rem)]'>
           <table className='w-full border-collapse text-xs'>
             <thead>
               <tr className='border-b border-line'>
                 {["Time", "Type", "Person", "Duration", "AR", "Responder", "Response", "Status", ""].map((h) => (
-                  <th key={h} className='py-2.5 px-3 text-left section-label whitespace-nowrap'>{h}</th>
+                  <th key={h} className='py-2.5 px-3 text-left section-label whitespace-nowrap sticky top-0 bg-surface z-10'>{h}</th>
                 ))}
               </tr>
             </thead>
