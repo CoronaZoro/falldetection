@@ -6,10 +6,11 @@ export type IncidentStatus =
   | "RESPONDING"
   | "ON_SCENE"
   | "RESOLVED"
+  | "RECOVERED"
   | "FALSE_ALARM";
 
 export interface WSMessage {
-  type: "heartbeat" | "fall_alert" | "recovery" | "escalation" | "voice_alert" | "call_status" | "mic_status";
+  type: "heartbeat" | "state_update" | "fall_alert" | "recovery" | "escalation" | "voice_alert" | "voice_tts_ready" | "call_status" | "mic_status";
   timestamp: number;
   event_id?: string;
   person_id?: number;
@@ -19,6 +20,7 @@ export interface WSMessage {
   message?: string;
   speaker?: "user" | "assistant";
   mid?: number;                       // voice_alert dedup ID
+  speed?: string;                     // voice_alert TTS speed label — typewriter sync
   callStatus?: "active" | "idle";
   auto_resolved?: boolean;
   status?: string;
@@ -29,6 +31,7 @@ export interface VoiceEntry {
   speaker: "user" | "assistant";
   text: string;
   timestamp: number;
+  speed?: string;  // TTS speed label at time of broadcast — used for typewriter sync
 }
 
 export interface AckMessage {
@@ -70,6 +73,11 @@ export interface SystemConfig {
   transitionTime: number;
   confirmSeconds: number;
   escalationSeconds: number;
+  fallVelThreshold: number;
+  sleepVelThreshold: number;
+  poseSpineFallen: number;
+  recoveryLabelTime: number;
+  movementThreshold: number;
 }
 
 export interface EventLogEntry {

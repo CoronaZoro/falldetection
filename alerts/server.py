@@ -22,7 +22,50 @@ except ImportError:
 
 from . import voice as _voice
 
-_ESCALATION_TIMEOUT_SECS = 15
+# ── Live runtime config ────────────────────────────────────────────────
+_config: dict = {
+    "cameraIndex":       0,
+    "arThreshold":       1.5,
+    "transitionTime":    1.5,
+    "confirmSeconds":    1.5,
+    "escalationSeconds": 15,
+    "fallVelThreshold":  0.30,
+    "sleepVelThreshold": 0.20,
+    "poseSpineFallen":   45.0,
+    "recoveryLabelTime": 0.5,
+    "movementThreshold": 10,
+}
+_fall_logic_ref = None   # injected by test_video.py via register_fall_logic()
+
+
+def register_fall_logic(logic_instance) -> None:
+    """Called by test_video.py after creating FallLogic so PUT /config can hot-update it."""
+    global _fall_logic_ref
+    _fall_logic_ref = logic_instance
+
+
+def get_config() -> dict:
+    return _config
+
+
+def _apply_config_to_logic(logic) -> None:
+    """Push current _config values onto the FallLogic instance attributes."""
+    logic.AR_FALL_THRESHOLD   = _config["arThreshold"]
+    logic.MAX_TRANSITION_TIME = _config["transitionTime"]
+    logic.DOWN_CONFIRM        = _config["confirmSeconds"]
+    logic.FALL_VEL_THRESHOLD  = _config["fallVelThreshold"]
+    logic.SLEEP_VEL_THRESHOLD = _config["sleepVelThreshold"]
+    logic.POSE_SPINE_FALLEN   = _config["poseSpineFallen"]
+    logic.RECOVERY_LABEL_TIME = _config["recoveryLabelTime"]
+    logic.MOVEMENT_THRESHOLD  = _config["movementThreshold"]
+
+
+# Visualizer feature flags — toggled live by the dashboard
+_viz_flags: dict[str, bool] = {"skeleton": True, "bbox": True, "status_bar": True}
+
+
+def get_viz_flags() -> dict[str, bool]:
+    return _viz_flags
 
 app = FastAPI(title="Fall Detection Alert Server")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -63,6 +106,53 @@ async def health():
     return {"status": "running", "connections": len(connections), "timestamp": time.time()}
 
 
+class VizFlagsModel(BaseModel):
+    skeleton:   bool | None = None
+    bbox:       bool | None = None
+    status_bar: bool | None = None
+
+
+@app.get("/visualization")
+async def get_visualization():
+    return _viz_flags
+
+
+@app.put("/visualization")
+async def update_visualization(body: VizFlagsModel):
+    if body.skeleton   is not None: _viz_flags["skeleton"]   = body.skeleton
+    if body.bbox       is not None: _viz_flags["bbox"]       = body.bbox
+    if body.status_bar is not None: _viz_flags["status_bar"] = body.status_bar
+    return _viz_flags
+
+
+class ConfigModel(BaseModel):
+    cameraIndex:       int   | None = None
+    arThreshold:       float | None = None
+    transitionTime:    float | None = None
+    confirmSeconds:    float | None = None
+    escalationSeconds: int   | None = None
+    fallVelThreshold:  float | None = None
+    sleepVelThreshold: float | None = None
+    poseSpineFallen:   float | None = None
+    recoveryLabelTime: float | None = None
+    movementThreshold: int   | None = None
+
+
+@app.get("/config")
+async def get_config_route():
+    return _config
+
+
+@app.put("/config")
+async def update_config_route(body: ConfigModel):
+    for field, value in body.model_dump(exclude_none=True).items():
+        _config[field] = value
+    if _fall_logic_ref is not None:
+        _apply_config_to_logic(_fall_logic_ref)
+        print(f"[Config] thresholds hot-applied to FallLogic: {_config}")
+    return _config
+
+
 async def _mjpeg_generator():
     while True:
         if latest_frame is not None:
@@ -96,7 +186,7 @@ def broadcast_fall(person_id: int, ar: float, down_duration: float) -> None:
         "ar":            round(ar, 2),
         "down_duration": down_duration,
     })
-    timer = threading.Timer(_ESCALATION_TIMEOUT_SECS, _escalate, args=(event_id,))
+    timer = threading.Timer(_config["escalationSeconds"], _escalate, args=(event_id,))
     timer.daemon = True
     timer.start()
     pending[event_id]           = {"ts": time.time(), "timer": timer}
@@ -104,7 +194,7 @@ def broadcast_fall(person_id: int, ar: float, down_duration: float) -> None:
     print(f"[Server] fall alert sent: {event_id}")
 
 
-def broadcast_recovery(person_id: int) -> None:
+def broadcast_recovery(person_id: int, down_duration: float = 0.0) -> None:
     """auto_resolved=True if person recovered before the escalation timer fired."""
     event_id      = _person_to_event.pop(person_id, None)
     auto_resolved = False
@@ -113,23 +203,35 @@ def broadcast_recovery(person_id: int) -> None:
         pending[event_id]["timer"].cancel()
         del pending[event_id]
         auto_resolved = True
-        print(f"[Server] person {person_id} recovered, timer cancelled")
+        print(f"[Server] person {person_id} recovered after {down_duration:.1f}s, timer cancelled")
     else:
-        print(f"[Server] person {person_id} recovered (post-escalation)")
+        print(f"[Server] person {person_id} recovered after {down_duration:.1f}s (post-escalation)")
 
     _broadcast({
         "type":          "recovery",
         "timestamp":     time.time(),
         "person_id":     person_id,
+        "down_duration": round(down_duration, 1),
         "auto_resolved": auto_resolved,
     })
 
 
-def broadcast_heartbeat(persons_detected: int) -> None:
+def broadcast_heartbeat(persons_detected: int, state: str = "STABLE") -> None:
     _broadcast({
         "type":             "heartbeat",
         "timestamp":        time.time(),
         "status":           "monitoring",
+        "state":            state,
+        "persons_detected": persons_detected,
+    })
+
+
+def broadcast_state(state: str, persons_detected: int = 0) -> None:
+    """Immediate state-change broadcast — fired whenever detection state transitions."""
+    _broadcast({
+        "type":             "state_update",
+        "timestamp":        time.time(),
+        "state":            state,
         "persons_detected": persons_detected,
     })
 
@@ -177,7 +279,7 @@ def _escalate(event_id: str) -> None:
     if event_id in pending:
         del pending[event_id]
         _broadcast({"type": "escalation", "event_id": event_id, "timestamp": time.time()})
-        print(f"[Server] no ack after {_ESCALATION_TIMEOUT_SECS}s, escalated: {event_id}")
+        print(f"[Server] no ack after {_config['escalationSeconds']}s, escalated: {event_id}")
 
 
 def start_server(host: str = "0.0.0.0", port: int = 8765) -> None:

@@ -7,14 +7,17 @@ and a Next.js multi-user dashboard.
 ## Repository Structure
 ```
 falldetection/
-├── alerts/             FastAPI server + voice module + fall state machine
-│   ├── server.py       Core server — WS, MJPEG, escalation, fall/recovery broadcasts
+├── alerts/             FastAPI server + voice module + fall state machine + pose analyzer
+│   ├── server.py       Core server — WS, MJPEG, config, viz flags, escalation, broadcasts
 │   ├── voice.py        Voice session — WebRTC VAD, STT, Claude, TTS, /call/* routes
-│   └── fall_logic.py   Per-person fall state machine (moved from core/)
+│   ├── fall_logic.py   Per-person fall state machine (velocity-first + SLEEPING state)
+│   └── pose_analyzer.py  MediaPipe Tasks API wrapper (spine angle, hip velocity, head pos)
 ├── data/               Dataset download scripts
 ├── tests/              Demo entry point (test_video.py)
 ├── training/           YOLO11 fine-tuning script
 ├── models/             Model weights (gitignored)
+│   ├── best.pt         Fine-tuned YOLO11 model
+│   └── pose_landmarker_lite.task  MediaPipe pose model (download separately)
 ├── dashboard/          Next.js 14 web app (GUARDIAN Dashboard)
 ├── progress.md         This file
 └── README.md           Full setup and usage documentation
@@ -104,29 +107,7 @@ Replaced the separate `fall_detection_voice_app.py` process. Voice is now a stan
 - [x] `_build_incident_block(incident)` — converts AR + down_duration into plain-English risk context prepended to system prompt
 - [x] AR risk: < 0.5 = HIGH, 0.5–0.7 = MODERATE, > 0.7 = LOW
 - [x] Duration risk: ≥ 30s = CRITICAL, ≥ 10s = HIGH, < 10s = MODERATE
-- [x] Bot answers "what happened?", "how serious is it?", "what should I check?" immediately on call start
-
-## Phase 6 — WebRTC VAD ✅
-
-Replaced `sr.Recognizer.listen()` energy-threshold VAD with Google WebRTC VAD for more
-accurate speech boundary detection — prevents cutoff on natural pauses.
-
-- [x] `webrtcvad-wheels` installed — prebuilt, no compiler needed
-- [x] PyAudio stream opened once and held for the entire call (16 kHz / 16-bit / mono)
-- [x] `_capture_utterance()` — 30 ms frame loop; ring-buffer pre-roll (300 ms) prevents onset clipping
-- [x] `on_speech_start` callback — fires exactly once on first speech frame; broadcasts `mic_status: "speaking"` to dashboard
-- [x] 4-level aggressiveness: `_vad_aggressiveness()` maps dashboard sensitivity to 0–3
-- [x] Sensitivity → VAD mapping:
-
-  | Dashboard label | Aggressiveness | Silence threshold |
-  |----------------|---------------|-------------------|
-  | Sensitive | 0 | 100 ms |
-  | Balanced | 1 | 300 ms |
-  | Clear | 2 | 600 ms |
-  | Strict | 3 | 1200 ms |
-
-- [x] `mic_status` WS message: `"listening"` (mic open, waiting) · `"speaking"` (speech onset detected)
-- [x] Server and `tests/test_video.py` import updated: `from alerts.fall_logic import FallLogic`
+- [x] Bot answers "what happened?", "how serious is it?", "how long have they been down?" immediately on call start
 
 ---
 
@@ -190,13 +171,161 @@ accurate speech boundary detection — prevents cutoff on natural pauses.
 
 ---
 
+## Phase 6 — WebRTC VAD ✅
+
+Replaced `sr.Recognizer.listen()` energy-threshold VAD with Google WebRTC VAD for more
+accurate speech boundary detection — prevents cutoff on natural pauses.
+
+- [x] `webrtcvad-wheels` installed — prebuilt, no compiler needed
+- [x] PyAudio stream opened once and held for the entire call (16 kHz / 16-bit / mono)
+- [x] `_capture_utterance()` — 30 ms frame loop; ring-buffer pre-roll (300 ms) prevents onset clipping
+- [x] `on_speech_start` callback — fires exactly once on first speech frame; broadcasts `mic_status: "speaking"` to dashboard
+- [x] 4-level aggressiveness: `_vad_aggressiveness()` maps dashboard sensitivity to 0–3
+- [x] Sensitivity → VAD mapping:
+
+  | Dashboard label | Aggressiveness | Silence threshold |
+  |----------------|---------------|-------------------|
+  | Sensitive | 0 | 100 ms |
+  | Balanced | 1 | 300 ms |
+  | Clear | 2 | 600 ms |
+  | Strict | 3 | 1200 ms |
+
+- [x] `mic_status` WS message: `"listening"` (mic open, waiting) · `"speaking"` (speech onset detected)
+
+---
+
+## Phase 7 — MediaPipe Skeleton Integration ✅
+
+Added `PoseAnalyzer` (`alerts/pose_analyzer.py`) to extract biomechanical signals per frame
+using the MediaPipe Tasks API (0.10+). Replaced the removed legacy `mp.solutions` API.
+
+- [x] Uses `PoseLandmarker` with `RunningMode.VIDEO` — stateful, processes timestamps in order
+- [x] Model file: `models/pose_landmarker_lite.task` (downloaded separately via `curl`)
+- [x] Landmark indices tracked: nose (0), left/right shoulder (11/12), left/right hip (23/24), left/right ankle (27/28)
+- [x] Visibility threshold: 0.5 — landmarks below this are excluded from calculations
+
+### Signals extracted per person per frame
+
+| Signal | Description |
+|--------|-------------|
+| `spine_angle` | Degrees from vertical — shoulder midpoint → hip midpoint vector. 0° = upright, 90° = flat |
+| `hip_velocity` | Normalized screen units/s downward — rolling 0.5s deque of hip midpoint Y positions |
+| `head_below_waist` | Boolean — `nose.y > hip_mid.y` in image coordinates |
+| `visible` | Boolean — whether any reliable landmarks were found this frame |
+
+- [x] Person matching: hip midpoint checked against bounding boxes; falls back to first person if only one detected
+- [x] `_extract_signals()` uses `collections.deque` with maxlen based on FPS estimate for velocity window
+- [x] `remove_person(person_id)` — cleans up state when a tracked person leaves the frame
+- [x] `draw(frame)` — OpenCV skeleton overlay using `PoseLandmarksConnections.POSE_LANDMARKS`; manual line/circle drawing (no `mp.solutions.drawing_utils`)
+
+### MediaPipe API migration notes
+- Legacy `mp.solutions.pose` and `mp.solutions.drawing_utils` are entirely removed in 0.10+
+- New import path: `from mediapipe.tasks.python import vision, BaseOptions`
+- Inference: `detect_for_video(mp.Image(...), timestamp_ms)` instead of `process(rgb_frame)`
+- Landmarks: `result.pose_landmarks[0]` returns a list of `NormalizedLandmark` objects
+
+---
+
+## Phase 8 — Velocity-Based Fall Classification & SLEEPING State ✅
+
+Replaced time-based transition detection with hip velocity as the primary discriminator
+between true falls and intentional lie-downs. Added `SLEEPING` as a first-class state.
+
+### Root cause of previous false positives
+`last_up_time` was updated for both `"up"` AND `"bending"` frames. A person bending for
+3s then lying down slowly showed `transition_time ≈ 33ms`, bypassing the slow-transition
+guard entirely.
+
+### Velocity-first classification (`_classify()` in `fall_logic.py`)
+
+- [x] `hip_velocity > FALL_VEL_THRESHOLD (0.30/s)` → **fall** — fast drop, alarm fires
+- [x] `hip_velocity < SLEEP_VEL_THRESHOLD (0.20/s)` → **sleep** — slow descent, no alarm
+- [x] Ambiguous zone (0.20–0.30/s) → resolved by body geometry:
+  - `spine_angle > POSE_SPINE_FALLEN (45°)` → fall
+  - `head_below_waist == True` → fall
+  - Otherwise → sleep
+- [x] Fallback when pose not visible: `transition_time > MAX_TRANSITION_TIME (1.5s)` → sleep
+
+### `SLEEPING` state
+- [x] `SLEEPING` constant added to `fall_logic.py`
+- [x] State machine branch: person in SLEEPING stays until sustained `"up"` for `RECOVERY_LABEL_TIME (0.5s)`, then returns to STABLE
+- [x] No alarm fired in SLEEPING state
+- [x] Visual indicator: purple bounding box + "SLEEPING — no alarm" banner in `test_video.py`
+- [x] `STATE_COLORS` includes `SLEEPING: (180, 80, 220)` purple in `test_video.py`
+- [x] `StatusBadge.tsx` updated to include SLEEPING (purple/accent color)
+
+### Pose gate for VALIDATION → ALARM
+- [x] `_pose_confirms_fall(pose)` — blocks alarm if skeleton visible and body is NOT horizontal
+- [x] Prevents false positives where bounding box AR is high but person is not actually flat
+
+### Key thresholds
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `FALL_VEL_THRESHOLD` | 0.30 /s | Hip velocity above = definite fall |
+| `SLEEP_VEL_THRESHOLD` | 0.20 /s | Hip velocity below = definite sleep |
+| `POSE_SPINE_FALLEN` | 45.0° | Spine angle above = body horizontal |
+| `MAX_TRANSITION_TIME` | 1.5 s | Fallback: slow transition = sleep |
+| `AR_FALL_THRESHOLD` | 1.5 | Bounding box aspect ratio gate |
+| `DOWN_CONFIRM` | 1.5 s | Immobility required before ALARM |
+| `RECOVERY_LABEL_TIME` | 0.5 s | Sustained "up" required to exit ALARM or SLEEPING |
+
+---
+
+## Phase 9 — Dashboard Improvements ✅
+
+### Live Feed Visualizer Toggles
+- [x] `_viz_flags` dict in `server.py`: `{"skeleton": True, "bbox": True, "status_bar": True}`
+- [x] `GET /visualization` — returns current toggle state
+- [x] `PUT /visualization` — updates any combination of flags; applied per-frame in `test_video.py`
+- [x] `LiveFeed.tsx` — three toggle buttons (top-right of video): Skeleton (`Scan`), Box (`Square`), Status (`PanelTop`)
+- [x] Optimistic UI updates with server rollback on error
+- [x] Initial state synced from server on component mount
+
+### StatusBadge — All Detection States
+- [x] Added `SLEEPING` (purple/accent), `INACTIVITY` (amber/warning), `SOS` (amber/warning)
+- [x] Full set: STABLE, MONITORING, SLEEPING, TRANSITION, VALIDATION, INACTIVITY, ALARM, RECOVERY + incident flow statuses
+
+### Real-Time Badge Updates
+- [x] `broadcast_state(state, persons_detected)` in `server.py` — fires immediately on every state change (no waiting for heartbeat)
+- [x] `broadcast_heartbeat(persons_detected, state)` — updated to carry `state` field (3s fallback sync)
+- [x] `state_update` WS message type added to `dashboard/types/index.ts`
+- [x] `ResponderDashboardClient.tsx` — both `heartbeat` and `state_update` call `setSystemState(msg.state)`; previously hardcoded `"STABLE"`
+
+### Recovery Flow
+- [x] `ALARM → RECOVERY` transition: `down_since` captured as final duration before clearing
+- [x] `s["final_down_duration"]` stored in state; used in `_result()` for the RECOVERY frame
+- [x] `broadcast_recovery(person_id, down_duration)` — includes final down duration in WS message
+- [x] `recovery` message with `auto_resolved=true` → dashboard auto-closes incident as RECOVERED
+- [x] Countdown timer stops immediately when `auto_resolved` recovery arrives
+- [x] Incident closed as "Fall but Recovered" (RECOVERED status) with 4s auto-dismiss
+- [x] ChatPanel returns to LOCKED state after recovery (no active incident)
+
+### Live Down-Duration Counter
+- [x] `elapsedSeconds` state in `ResponderDashboardClient.tsx` — increments every second while alert active
+- [x] Display: `initialDownDuration + elapsedSeconds` — counts from when person first went "down"
+- [x] Counter freezes on recovery; final duration from server `down_duration` field shown
+- [x] `totalDownRef` keeps current elapsed value accessible in async callbacks (e.g. `onCallStart`)
+- [x] Voice chatbot receives live elapsed duration, not the snapshot from alarm time
+
+### Admin Settings — Live Sync to FastAPI
+- [x] Admin settings page reads initial values from `GET /config` on mount
+- [x] Each slider/input change triggers `PUT /config` with the changed field
+- [x] `FallLogic` attributes updated in-place on `PUT /config` — no restart needed
+- [x] `SystemConfig` Prisma model stays in sync (dual-write: FastAPI + DB via Next.js API)
+- [x] Settings persist across restarts: Python engine reads from DB on startup via `/config` seed
+
+---
+
 ## FastAPI Endpoints (current)
 
 | Method | Route | Description |
 |--------|-------|-------------|
-| GET | `/health` | Server status |
+| GET | `/health` | Server status + WS connection count |
 | WS | `/ws` | WebSocket (alerts → dashboard, ACK ← dashboard) |
 | GET | `/video` | MJPEG annotated video stream |
+| GET/PUT | `/config` | Read or update live detection thresholds |
+| GET/PUT | `/visualization` | Toggle skeleton / bounding box / status bar overlays |
 | POST | `/transcript` | Voice chatbot line → broadcast to all dashboards |
 | POST | `/call/start` | Start voice session (language, speed, is_authorized, incident) |
 | POST | `/call/stop` | End voice session + kill TTS playback |
@@ -207,14 +336,15 @@ accurate speech boundary detection — prevents cutoff on natural pauses.
 
 | Direction | Message Type | Fields |
 |-----------|-------------|--------|
-| Python → Dashboard | `heartbeat` | persons_detected |
-| Python → Dashboard | `fall_alert` | event_id, person_id, ar, down_duration |
-| Python → Dashboard | `recovery` | person_id, auto_resolved |
-| Python → Dashboard | `voice_alert` | message, speaker ("user"\|"assistant"), mid (dedup ID) |
-| Python → Dashboard | `call_status` | callStatus ("active"\|"idle") |
-| Python → Dashboard | `mic_status` | status ("listening"\|"speaking") |
-| Python → Dashboard | `escalation` | event_id |
-| Dashboard → Python | `acknowledge` | event_id |
+| Python → Dashboard | `heartbeat` | `state`, `persons_detected` |
+| Python → Dashboard | `state_update` | `state`, `persons_detected` |
+| Python → Dashboard | `fall_alert` | `event_id`, `person_id`, `ar`, `down_duration` |
+| Python → Dashboard | `recovery` | `person_id`, `auto_resolved`, `down_duration` |
+| Python → Dashboard | `voice_alert` | `message`, `speaker` ("user"\|"assistant"), `mid` (dedup ID) |
+| Python → Dashboard | `call_status` | `callStatus` ("active"\|"idle") |
+| Python → Dashboard | `mic_status` | `status` ("listening"\|"speaking") |
+| Python → Dashboard | `escalation` | `event_id` |
+| Dashboard → Python | `acknowledge` | `event_id` |
 
 ---
 

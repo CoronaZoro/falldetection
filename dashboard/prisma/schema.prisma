@@ -73,6 +73,7 @@ enum IncidentStatus {
   RESPONDING
   ON_SCENE
   RESOLVED
+  RECOVERED
   FALSE_ALARM
 }
 
@@ -82,6 +83,11 @@ model SystemConfig {
   arThreshold       Float    @default(1.5)
   transitionTime    Float    @default(1.2)
   confirmSeconds    Float    @default(1.5)
-  escalationSeconds Int      @default(15)
+  escalationSeconds  Int      @default(15)
+  fallVelThreshold   Float    @default(0.30)
+  sleepVelThreshold  Float    @default(0.20)
+  poseSpineFallen    Float    @default(45.0)
+  recoveryLabelTime  Float    @default(0.5)
+  movementThreshold  Int      @default(10)
   updatedAt         DateTime @updatedAt
 }

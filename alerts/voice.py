@@ -33,7 +33,7 @@ _LOCATION = "Rangsit University, Pathum Thani, Thailand"
 
 
 # Two system prompt tiers: authorized healthcare provider vs. bystander
-_AUTHORIZED_PROMPT = """You are an emergency medical voice assistant integrated into a fall detection system.
+_AUTHORIZED_PROMPT = """You are an emergency medical voice assistant with live call integrated into a fall detection system.
 Location of incident: {location}
 
 ROLE: The user is an **authorized healthcare provider** on the scene.
@@ -48,15 +48,15 @@ BEHAVIOR:
    "tell me more", "what else", "explain", or "go on".
 2. If the user asks for more details or elaboration on a previous topic, THEN provide
    a fuller step-by-step procedure, still keeping it concise and actionable.
-3. If the user asks something NOT related to healthcare or the emergency, reply EXACTLY:
-   "My apologies. I'm only able to provide critical healthcare information.
-    Your command could not be processed. Thank you."
+3. If the user asks something NOT related to healthcare, incident or the emergency, reply EXACTLY:
+   "My apologies. I'm only able to provide critical healthcare information. Thank you."
 4. Language: reply in **{language}** by default. If the user's message is in a
    different language, automatically detect it and reply in that language instead.
    Always match the language the user is currently speaking.
 5. Keep initial responses under 50 words. Detailed follow-ups under 150 words.
-6. Do NOT use markdown, bullet points, asterisks, or numbered lists.
-   Write in plain flowing sentences — this will be spoken aloud."""
+6. Do NOT use markdown, bullet points, asterisks, em dashes, or numbered lists.
+   Write in plain flowing sentences — this will be spoken aloud.
+7. If the user asks for emergency contact info, provide the nearest hospital contact infos in the area."""
 
 _UNAUTHORIZED_PROMPT = """You are an emergency voice assistant integrated into a fall detection system.
 Location of incident: {location}
@@ -72,15 +72,15 @@ BEHAVIOR:
      Rangsit Hospital: 02-150-0200.
    - Advise them NOT to move the patient unless in immediate danger.
    - Keep it short and reassuring.
-2. If the user asks something NOT related to healthcare or the emergency, reply EXACTLY:
-   "My apologies. I'm only able to provide critical healthcare information.
-    Your command could not be processed. Thank you."
+2. If the user asks something NOT related to healthcare, incident or the emergency, reply EXACTLY:
+   "My apologies. I'm only able to provide critical healthcare information. Thank you."
 3. Language: reply in **{language}** by default. If the user's message is in a
    different language, automatically detect it and reply in **{language}** instead.
    Always match the language the user is currently speaking.
 4. Keep responses under 100 words.
-5. Do NOT use markdown, bullet points, asterisks, or numbered lists.
-   Write in plain flowing sentences — this will be spoken aloud."""
+5. Do NOT use markdown, bullet points, asterisks, em dashes, or numbered lists.
+   Write in plain flowing sentences — this will be spoken aloud.
+7. If the user asks for emergency contact info, provide the nearest hospital contact infos in the area."""
 
 
 # Language name -> Google STT locale and Edge TTS neural voice
@@ -115,10 +115,12 @@ _MAX_HISTORY  = 20      # rolling window of messages kept in context (10 exchang
 # These globals are read by _voice_loop every iteration so /call/settings
 # changes take effect on the next listen/speak cycle without restarting.
 _voice_active:             bool  = False
+_mic_muted:                bool  = False
 _current_lang:             str   = "English"
 _current_voice:            str   = _EDGE_VOICE_MAP["English"]
 _current_stt_lang:         str   = _STT_LANG_MAP["English"]
 _current_rate:             str   = _DEFAULT_RATE
+_current_speed_label:      str   = "1x"   # dashboard label — sent in voice_alert for typewriter sync
 _current_energy_threshold: int   = 300    # maps to VAD aggressiveness; see _vad_aggressiveness()
 _current_pause_threshold:  float = 1.2    # silence (seconds) after speech before sending
 
@@ -132,7 +134,14 @@ class InterruptibleSpeaker:
         self._process: subprocess.Popen | None = None
         self._lock = threading.Lock()
 
-    def speak(self, text: str, voice: str, rate: str = _DEFAULT_RATE) -> None:
+    def speak(
+        self,
+        text: str,
+        voice: str,
+        rate: str = _DEFAULT_RATE,
+        on_tts_ready: "callable | None" = None,
+        on_play_start: "callable | None" = None,
+    ) -> None:
         try:
             import edge_tts as _edge_tts
         except ImportError:
@@ -150,6 +159,10 @@ class InterruptibleSpeaker:
             print(f"[Voice] TTS failed: {exc} | voice={voice!r} rate={rate!r}")
             return
 
+        # TTS file is ready — signal dashboard to show "preparing audio" state
+        if on_tts_ready:
+            on_tts_ready()
+
         try:
             with self._lock:
                 self._process = subprocess.Popen(
@@ -157,6 +170,11 @@ class InterruptibleSpeaker:
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
+            # Give afplay ~150 ms to buffer before broadcasting text so that
+            # audio onset and text display land on the dashboard at the same time.
+            time.sleep(0.15)
+            if on_play_start:
+                on_play_start()
             self._process.wait()
         except Exception as exc:
             print(f"[Voice] afplay failed: {exc}")
@@ -324,10 +342,12 @@ def _voice_loop(is_authorized: bool, incident: IncidentContext | None = None) ->
 
     def _tx(speaker: str, text: str) -> None:
         # mid field lets the dashboard deduplicate React StrictMode double-sends
+        # speed field lets the dashboard pace the typewriter to match audio playback
         nonlocal _mid
         _mid += 1
         _broadcast({"type": "voice_alert", "speaker": speaker,
-                    "message": text, "mid": _mid, "timestamp": time.time()})
+                    "message": text, "mid": _mid, "timestamp": time.time(),
+                    "speed": _current_speed_label})
 
     recognizer = sr.Recognizer()
     _tx("assistant", "Call started — listening...")
@@ -357,7 +377,8 @@ def _voice_loop(is_authorized: bool, incident: IncidentContext | None = None) ->
         while _voice_active:
             try:
                 # listen
-                _broadcast({"type": "mic_status", "status": "listening", "timestamp": time.time()})
+                status = "muted" if _mic_muted else "listening"
+                _broadcast({"type": "mic_status", "status": status, "timestamp": time.time()})
                 vad = _webrtcvad.Vad(_vad_aggressiveness())
                 pcm_bytes = _capture_utterance(
                     stream            = _stream,
@@ -367,10 +388,15 @@ def _voice_loop(is_authorized: bool, incident: IncidentContext | None = None) ->
                     silence_secs      = _current_pause_threshold,
                     timeout_secs      = 15.0,
                     phrase_limit_secs = 30.0,
-                    on_speech_start   = lambda: _broadcast(
+                    on_speech_start   = None if _mic_muted else lambda: _broadcast(
                         {"type": "mic_status", "status": "speaking", "timestamp": time.time()}
                     ),
                 )
+
+                # Discard captured audio when muted — don't send to STT or Claude
+                if _mic_muted:
+                    continue
+
                 audio = sr.AudioData(pcm_bytes, _SAMPLE_RATE, 2)
 
                 # transcribe
@@ -416,14 +442,32 @@ def _voice_loop(is_authorized: bool, incident: IncidentContext | None = None) ->
 
                 history.append({"role": "assistant", "content": reply})
 
-                # broadcast full text first so dashboard typewriter starts while audio plays
-                _tx("assistant", reply)
+                # Two-phase sync: dashboard shows "preparing audio" when TTS is
+                # done, then text appears together with audio after afplay buffers.
+                first_tts = True
+                first      = True
+
+                def _on_tts_ready():
+                    nonlocal first_tts
+                    if first_tts:
+                        first_tts = False
+                        _broadcast({"type": "voice_tts_ready", "timestamp": time.time()})
+
+                def _on_first_play():
+                    nonlocal first
+                    if first:
+                        first = False
+                        _tx("assistant", reply)
+
                 for sentence in sentences:
                     if not _voice_active:
                         break
                     clean = sentence.replace("*", "").replace("#", "")
                     if clean:
-                        _speaker.speak(clean, _current_voice, _current_rate)
+                        tts_cb  = _on_tts_ready  if first_tts else None
+                        play_cb = _on_first_play  if first     else None
+                        _speaker.speak(clean, _current_voice, _current_rate,
+                                       on_tts_ready=tts_cb, on_play_start=play_cb)
 
             except TimeoutError:
                 continue
@@ -458,7 +502,7 @@ def _voice_loop(is_authorized: bool, incident: IncidentContext | None = None) ->
 async def start_call(payload: CallStartPayload):
     """Start a voice session. Returns {ok: false} if one is already running."""
     global _voice_active, _current_lang, _current_voice, _current_stt_lang, \
-           _current_rate, _current_energy_threshold, _current_pause_threshold
+           _current_rate, _current_speed_label, _current_energy_threshold, _current_pause_threshold
 
     if _voice_active:
         return {"ok": False, "error": "call already active"}
@@ -467,6 +511,7 @@ async def start_call(payload: CallStartPayload):
     _current_voice            = _EDGE_VOICE_MAP.get(payload.language, "en-US-JennyNeural")
     _current_stt_lang         = _STT_LANG_MAP.get(payload.language, "en-US")
     _current_rate             = _SPEED_RATE_MAP.get(payload.speed, _DEFAULT_RATE)
+    _current_speed_label      = payload.speed
     _current_energy_threshold = payload.sensitivity
     _current_pause_threshold  = payload.pause_after
 
@@ -480,25 +525,44 @@ async def start_call(payload: CallStartPayload):
 @router.post("/call/stop")
 async def stop_call():
     """Stop the active session and kill any in-progress audio immediately."""
-    global _voice_active
+    global _voice_active, _mic_muted
     _voice_active = False
+    _mic_muted    = False
     _speaker.stop()
     _broadcast({"type": "call_status", "callStatus": "idle", "timestamp": time.time()})
     print("[Voice] call stopped")
     return {"ok": True}
 
 
+@router.post("/call/mute")
+async def mute_mic():
+    """Mute the microphone — audio is still captured but discarded."""
+    global _mic_muted
+    _mic_muted = True
+    _broadcast({"type": "mic_status", "status": "muted", "timestamp": time.time()})
+    return {"muted": True}
+
+
+@router.post("/call/unmute")
+async def unmute_mic():
+    """Unmute the microphone — resume normal STT processing."""
+    global _mic_muted
+    _mic_muted = False
+    _broadcast({"type": "mic_status", "status": "listening", "timestamp": time.time()})
+    return {"muted": False}
+
+
 @router.get("/call/status")
 async def call_status():
     """Check if a voice session is active. Used by the dashboard on mount."""
-    return {"active": _voice_active}
+    return {"active": _voice_active, "muted": _mic_muted}
 
 
 @router.post("/call/settings")
 async def update_call_settings(payload: CallSettingsPayload):
     """Update language, speed, or VAD settings mid-call. Takes effect next cycle."""
     global _current_lang, _current_voice, _current_stt_lang, _current_rate, \
-           _current_energy_threshold, _current_pause_threshold
+           _current_speed_label, _current_energy_threshold, _current_pause_threshold
 
     if payload.language:
         _current_lang     = payload.language
@@ -506,7 +570,8 @@ async def update_call_settings(payload: CallSettingsPayload):
         _current_stt_lang = _STT_LANG_MAP.get(payload.language, "en-US")
         print(f"[Voice] language -> {payload.language}")
     if payload.speed:
-        _current_rate = _SPEED_RATE_MAP.get(payload.speed, _DEFAULT_RATE)
+        _current_rate        = _SPEED_RATE_MAP.get(payload.speed, _DEFAULT_RATE)
+        _current_speed_label = payload.speed
         print(f"[Voice] speed -> {payload.speed} ({_current_rate})")
     if payload.sensitivity is not None:
         _current_energy_threshold = payload.sensitivity

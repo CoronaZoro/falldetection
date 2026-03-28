@@ -6,25 +6,32 @@ const CONFIG: Record<
   string,
   { label: string; color: string; bg: string; border: string }
 > = {
-  STABLE:     { label: "STABLE",         color: colors.success,  bg: rgba(colors.success,  0.08), border: rgba(colors.success,  0.18) },
-  MONITORING: { label: "MONITORING",     color: colors.success,  bg: rgba(colors.success,  0.08), border: rgba(colors.success,  0.18) },
-  TRANSITION: { label: "TRANSITION",     color: colors.warning,  bg: rgba(colors.warning,  0.08), border: rgba(colors.warning,  0.20) },
-  VALIDATION: { label: "VALIDATING",     color: colors.warning,  bg: rgba(colors.warning,  0.08), border: rgba(colors.warning,  0.20) },
-  ALARM:      { label: "ALARM",          color: colors.danger,   bg: rgba(colors.danger,   0.10), border: rgba(colors.danger,   0.22) },
-  RECOVERY:   { label: "RECOVERY",       color: colors.success,  bg: rgba(colors.success,  0.08), border: rgba(colors.success,  0.18) },
+  // ── Detection states ──────────────────────────────────────────────────────
+  STABLE:     { label: "STABLE",      color: colors.success, bg: rgba(colors.success, 0.08), border: rgba(colors.success, 0.18) },
+  MONITORING: { label: "MONITORING",  color: colors.success, bg: rgba(colors.success, 0.08), border: rgba(colors.success, 0.18) },
+  SLEEPING:   { label: "SLEEPING",    color: colors.accent,  bg: rgba(colors.accent,  0.08), border: rgba(colors.accent,  0.20) },
+  TRANSITION: { label: "TRANSITION",  color: colors.warning, bg: rgba(colors.warning, 0.08), border: rgba(colors.warning, 0.20) },
+  VALIDATION: { label: "VALIDATING",  color: colors.warning, bg: rgba(colors.warning, 0.08), border: rgba(colors.warning, 0.20) },
+  INACTIVITY: { label: "INACTIVITY",  color: colors.warning, bg: rgba(colors.warning, 0.08), border: rgba(colors.warning, 0.20) },
+  ALARM:      { label: "ALARM",       color: colors.danger,  bg: rgba(colors.danger,  0.10), border: rgba(colors.danger,  0.22) },
+  RECOVERY:   { label: "RECOVERY",    color: colors.success, bg: rgba(colors.success, 0.08), border: rgba(colors.success, 0.18) },
 
-  UNACKNOWLEDGED: { label: "UNACKNOWLEDGED", color: colors.danger,   bg: rgba(colors.danger,  0.10), border: rgba(colors.danger,  0.22) },
-  ACKNOWLEDGED:   { label: "ACKNOWLEDGED",   color: colors.info,     bg: rgba(colors.info,    0.08), border: rgba(colors.info,    0.20) },
-  RESPONDING:     { label: "RESPONDING",     color: colors.warning,  bg: rgba(colors.warning, 0.08), border: rgba(colors.warning, 0.20) },
-  ON_SCENE:       { label: "ON SCENE",       color: colors.accent,   bg: rgba(colors.accent,  0.08), border: rgba(colors.accent,  0.20) },
-  RESOLVED:       { label: "RESOLVED",       color: colors.success,  bg: rgba(colors.success, 0.08), border: rgba(colors.success, 0.18) },
-  FALSE_ALARM:    { label: "FALSE ALARM",    color: colors.fgMuted,  bg: rgba(colors.fgMuted, 0.08), border: rgba(colors.fgMuted, 0.20) },
+  // ── Incident statuses ─────────────────────────────────────────────────────
+  UNACKNOWLEDGED: { label: "UNACKNOWLEDGED", color: colors.danger,  bg: rgba(colors.danger,  0.10), border: rgba(colors.danger,  0.22) },
+  ACKNOWLEDGED:   { label: "ACKNOWLEDGED",   color: colors.info,    bg: rgba(colors.info,    0.08), border: rgba(colors.info,    0.20) },
+  RESPONDING:     { label: "RESPONDING",     color: colors.warning, bg: rgba(colors.warning, 0.08), border: rgba(colors.warning, 0.20) },
+  ON_SCENE:       { label: "ON SCENE",       color: colors.accent,  bg: rgba(colors.accent,  0.08), border: rgba(colors.accent,  0.20) },
+  RESOLVED:       { label: "RESOLVED",       color: colors.success, bg: rgba(colors.success, 0.08), border: rgba(colors.success, 0.18) },
+  RECOVERED:      { label: "FALL — RECOVERED", color: colors.success, bg: rgba(colors.success, 0.08), border: rgba(colors.success, 0.18) },
+  FALSE_ALARM:    { label: "FALSE ALARM",    color: colors.fgMuted, bg: rgba(colors.fgMuted, 0.08), border: rgba(colors.fgMuted, 0.20) },
 
-  ONLINE:  { label: "ONLINE",  color: colors.success, bg: rgba(colors.success, 0.08), border: rgba(colors.success, 0.18) },
-  OFFLINE: { label: "OFFLINE", color: colors.danger,  bg: rgba(colors.danger,  0.10), border: rgba(colors.danger,  0.22) },
-  FALL:    { label: "FALL",    color: colors.danger,  bg: rgba(colors.danger,  0.10), border: rgba(colors.danger,  0.22) },
-  ADMIN:   { label: "ADMIN",   color: colors.accent,  bg: rgba(colors.accent,  0.08), border: rgba(colors.accent,  0.20) },
-  RESPONDER: { label: "RESPONDER", color: colors.info, bg: rgba(colors.info,   0.08), border: rgba(colors.info,   0.20) },
+  // ── Misc ──────────────────────────────────────────────────────────────────
+  ONLINE:    { label: "ONLINE",     color: colors.success, bg: rgba(colors.success, 0.08), border: rgba(colors.success, 0.18) },
+  OFFLINE:   { label: "OFFLINE",   color: colors.danger,  bg: rgba(colors.danger,  0.10), border: rgba(colors.danger,  0.22) },
+  FALL:      { label: "FALL",      color: colors.danger,  bg: rgba(colors.danger,  0.10), border: rgba(colors.danger,  0.22) },
+  SOS:       { label: "SOS",       color: colors.warning, bg: rgba(colors.warning, 0.08), border: rgba(colors.warning, 0.20) },
+  ADMIN:     { label: "ADMIN",     color: colors.accent,  bg: rgba(colors.accent,  0.08), border: rgba(colors.accent,  0.20) },
+  RESPONDER: { label: "RESPONDER", color: colors.info,    bg: rgba(colors.info,    0.08), border: rgba(colors.info,    0.20) },
 };
 
 const FALLBACK = {

@@ -12,6 +12,7 @@ import {
   ShieldOff,
   AlertTriangle,
   Lock,
+  Volume2,
 } from "lucide-react";
 import type { VoiceEntry } from "@/types";
 
@@ -58,10 +59,23 @@ const PAUSE_MAP: Record<Pause, number> = {
   "3s": 3.0,
 };
 
-/** Typewriter delay for AI messages — paced to feel deliberate */
-const CHAR_DELAY_MS = 22;
 /** Typewriter delay for user messages — faster, feels like live dictation */
 const USER_CHAR_DELAY_MS = 12;
+
+/**
+ * Typewriter char delay matched to Edge TTS playback rate.
+ * Values calibrated to ~130 wpm baseline at 1x, scaled per speed label.
+ * Text should finish animating at roughly the same moment audio ends.
+ */
+const SPEED_CHAR_DELAY_MS: Record<string, number> = {
+  "0.5x": 135,
+  "0.75x": 90,
+  "1x": 60,
+  "1.25x": 40,
+  "1.5x": 20,
+  "2x": 10,
+};
+const DEFAULT_CHAR_DELAY_MS = 44;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -96,8 +110,11 @@ interface Props {
   activeIncident: ActiveIncident | null;
   incidentUnlocked: boolean; // true once first incident fires this session
   isThinking: boolean; // AI is generating → show "..." dots
+  isPreparingAudio: boolean; // TTS done, afplay buffering → show "starting audio" state
   micListening: boolean; // mic is open (waiting or capturing)
   micSpeaking: boolean; // VAD has detected speech — user is talking
+  micMuted: boolean; // mic is muted — audio captured but discarded
+  onToggleMute: () => Promise<void>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -116,8 +133,11 @@ export default function ChatPanel({
   activeIncident,
   incidentUnlocked,
   isThinking,
+  isPreparingAudio,
   micListening,
   micSpeaking,
+  micMuted,
+  onToggleMute,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -153,7 +173,9 @@ export default function ChatPanel({
     let len = 0;
     const totalLen = lastEntry.text.length;
     const delay =
-      lastEntry.speaker === "user" ? USER_CHAR_DELAY_MS : CHAR_DELAY_MS;
+      lastEntry.speaker === "user"
+        ? USER_CHAR_DELAY_MS
+        : (SPEED_CHAR_DELAY_MS[lastEntry.speed ?? ""] ?? DEFAULT_CHAR_DELAY_MS);
 
     animIntervalRef.current = setInterval(() => {
       len++;
@@ -175,7 +197,7 @@ export default function ChatPanel({
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [transcript, isThinking, micListening, displayedLen]);
+  }, [transcript, isThinking, isPreparingAudio, micListening, displayedLen]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   function handleLangChange(lang: Language) {
@@ -218,7 +240,7 @@ export default function ChatPanel({
     );
   }
 
-  const hasTranscript = transcript.length > 0 || isThinking;
+  const hasTranscript = transcript.length > 0 || isThinking || isPreparingAudio;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Render
@@ -228,8 +250,10 @@ export default function ChatPanel({
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <div className='shrink-0 flex items-center justify-between px-3 py-2 border-b border-line'>
         <div className='flex items-center gap-1.5'>
-          <Mic size={11} className='text-accent' />
-          <span className='section-label'>Paladin</span>
+          <Mic size={20} className='text-accent' />
+          <span className='section-label text-fg'>
+            Paladin - Emergency Assistant
+          </span>
         </div>
         <div className='flex items-center gap-2'>
           {callActive && (
@@ -356,7 +380,7 @@ export default function ChatPanel({
           <div className='w-full border-t border-line/50 pt-2.5 flex flex-col gap-2'>
             <div className='flex items-center justify-center gap-1.5'>
               <p className='text-[10px] text-fg-muted uppercase tracking-wide'>
-                Voice Detection Threshold
+                Voice Sensitivity
               </p>
               <span className='text-[9px] font-mono text-fg-muted/60 bg-line/60 px-1 py-0.5 rounded'>
                 WebRTC VAD
@@ -516,6 +540,19 @@ export default function ChatPanel({
             </div>
           )}
 
+          {/* Preparing audio — TTS done, afplay buffering, text about to appear */}
+          {isPreparingAudio && !isThinking && (
+            <div className='flex gap-1 items-start'>
+              <Bot size={11} className='text-accent shrink-0 mt-0.5' />
+              <div className='bg-accent/10 rounded-lg rounded-bl-none px-3 py-2 flex items-center gap-1.5'>
+                <Volume2 size={10} className='text-accent animate-pulse' />
+                <span className='text-[10px] text-accent/80 italic'>
+                  starting audio…
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Mic indicator — static dot while waiting, waveform only when speech is detected */}
           {micListening && !isThinking && (
             <div className='flex gap-2 items-center justify-end'>
@@ -544,10 +581,15 @@ export default function ChatPanel({
               <div className='flex items-center justify-between gap-2'>
                 <div className='flex items-center gap-1.5'>
                   <div className='relative w-7 h-7 flex items-center justify-center'>
-                    <span className='absolute inset-0 rounded-full bg-danger/10 animate-ping' />
-                    <Mic size={13} className='text-danger z-10' />
+                    {!micMuted && <span className='absolute inset-0 rounded-full bg-danger/10 animate-ping' />}
+                    {micMuted
+                      ? <MicOff size={13} className='text-warning z-10' />
+                      : <Mic size={13} className='text-danger z-10' />
+                    }
                   </div>
-                  <span className='text-[10px] text-fg-muted'>Listening…</span>
+                  <span className='text-[10px] text-fg-muted'>
+                    {micMuted ? "Muted" : "Listening…"}
+                  </span>
                 </div>
                 <select
                   value={localLang}
@@ -571,6 +613,21 @@ export default function ChatPanel({
                     </option>
                   ))}
                 </select>
+                <button
+                  onClick={onToggleMute}
+                  className={`flex items-center gap-1 border rounded-full px-2.5 py-1.5 cursor-pointer transition-all active:scale-95 ${
+                    micMuted
+                      ? "bg-warning/20 hover:bg-warning/30 border-warning/40"
+                      : "bg-fg-muted/10 hover:bg-fg-muted/20 border-line"
+                  }`}
+                  title={micMuted ? "Unmute mic" : "Mute mic"}
+                >
+                  {micMuted ? (
+                    <MicOff size={11} className='text-warning' />
+                  ) : (
+                    <Mic size={11} className='text-fg-muted' />
+                  )}
+                </button>
                 <button
                   onClick={onCallStop}
                   className='flex items-center gap-1 bg-danger/15 hover:bg-danger/25 border border-danger/30 rounded-full px-2.5 py-1.5 cursor-pointer transition-all active:scale-95'

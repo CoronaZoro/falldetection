@@ -40,21 +40,28 @@ export default function CountdownBar({
     return (
       <div className='flex flex-col gap-2'>
         <div className='flex items-baseline justify-between'>
-          <span className='section-label'>person self-recovered</span>
-          <span className='font-mono font-bold text-2xl leading-none' style={{ color: colors.success }}>
+          <span className='section-label'>Fall but person self-recovered</span>
+          <span
+            className='font-mono font-bold text-2xl leading-none'
+            style={{ color: colors.success }}
+          >
             ✓
           </span>
         </div>
         <div className='h-1 bg-line rounded-full overflow-hidden'>
-          <div className='h-full w-full rounded-full' style={{ background: colors.success }} />
+          <div
+            className='h-full w-full rounded-full'
+            style={{ background: colors.success }}
+          />
         </div>
       </div>
     );
   }
 
-  const pct         = (remaining / seconds) * 100;
-  const urgentColor = remaining <= 5 ? colors.danger : remaining <= 10 ? colors.warning : color;
-  const urgent      = remaining <= 5;
+  const pct = (remaining / seconds) * 100;
+  const urgentColor =
+    remaining <= 5 ? colors.danger : remaining <= 10 ? colors.warning : color;
+  const urgent = remaining <= 5;
 
   return (
     <div className='flex flex-col gap-2'>

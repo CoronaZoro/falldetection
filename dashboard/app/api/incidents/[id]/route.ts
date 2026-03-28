@@ -33,7 +33,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     data.acknowledgedBy = acknowledgedBy;
     data.acknowledgedAt = new Date();
   }
-  if (status === "RESOLVED" || status === "FALSE_ALARM") {
+  if (status === "RESOLVED" || status === "RECOVERED" || status === "FALSE_ALARM") {
     data.resolvedAt = new Date();
   }
 
