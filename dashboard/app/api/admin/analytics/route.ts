@@ -57,10 +57,6 @@ export async function GET() {
       ? Math.round(responseTimes.reduce((a, b) => a + b.seconds, 0) / responseTimes.length)
       : 0;
 
-  // Type breakdown
-  const fallCount = allIncidents.filter((i) => i.type === "FALL").length;
-  const sosCount = allIncidents.filter((i) => i.type === "SOS").length;
-
   return NextResponse.json({
     fallsToday,
     fallsWeek,
@@ -71,8 +67,7 @@ export async function GET() {
     fallsPerDayChart: Object.entries(fallsPerDay).map(([date, count]) => ({ date, count })),
     responseTimeChart: responseTimes.slice(-14),
     typeBreakdown: [
-      { name: "Fall", value: fallCount },
-      { name: "SOS", value: sosCount },
+      { name: "Fall", value: totalIncidents },
     ],
   });
 }

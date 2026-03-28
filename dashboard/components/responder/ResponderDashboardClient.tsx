@@ -16,7 +16,7 @@ import type { WSMessage, EventLogEntry, IncidentStatus, VoiceEntry } from "@/typ
 
 interface Alert {
   eventId: string;
-  type: "fall" | "sos";
+  type: "fall";
   personId?: number;
   ar?: number;
   downDuration?: number;
@@ -36,6 +36,8 @@ let eventCounter = 0;
 
 export default function ResponderDashboardClient({ userId, userName, isAuthorized }: Props) {
   const seenMids          = useRef<Set<number>>(new Set());
+  // Dedup non-voice WS events — prevents React 18 StrictMode double-invoke firing twice
+  const seenEventKeys     = useRef<Set<string>>(new Set());
   const incidentIdRef     = useRef<string | null>(null);
   const incidentEverFired = useRef(false);
   const { setHasActiveIncident } = useIncidentContext();
@@ -50,7 +52,13 @@ export default function ResponderDashboardClient({ userId, userName, isAuthorize
   const [callActive,  setCallActive] = useState(false);
   const [language,    setLanguage]   = useState<ChatLanguage>("English");
   const [speed,       setSpeed]      = useState<ChatSpeed>("1x");
-  const [isThinking,  setIsThinking] = useState(false);
+  const [isThinking,    setIsThinking]    = useState(false);
+  const [micListening,  setMicListening]  = useState(false);
+  const [micSpeaking,   setMicSpeaking]   = useState(false);
+  // true while person is in self-recovery grace period (shows green card before auto-dismiss)
+  const [selfRecovered, setSelfRecovered] = useState(false);
+  // true once the 15 s escalation timer fires — recovery no longer auto-closes the incident
+  const [escalated,     setEscalated]     = useState(false);
   // Pending resolve — set when user clicks Resolved/False Alarm, cleared on confirm/cancel
   const [pendingResolve, setPendingResolve] = useState<IncidentStatus | null>(null);
 
@@ -108,6 +116,26 @@ export default function ResponderDashboardClient({ userId, userName, isAuthorize
         setPersons(msg.persons_detected ?? 0);
         return;
       }
+
+      // mic_status is a transient UI signal — handle immediately, no dedup needed
+      if (msg.type === "mic_status") {
+        setMicListening(msg.status === "listening" || msg.status === "speaking");
+        setMicSpeaking(msg.status === "speaking");
+        return;
+      }
+
+      // ── Dedup: build a unique key per event and skip if already seen ──
+      // Prevents React 18 StrictMode double-invoke from firing handlers twice.
+      if (msg.type !== "voice_alert") {
+        const key =
+          msg.event_id
+            ? `${msg.type}_${msg.event_id}`
+            : `${msg.type}_${msg.person_id ?? ""}_${Math.floor(msg.timestamp)}`;
+        if (seenEventKeys.current.has(key)) return;
+        seenEventKeys.current.add(key);
+        if (seenEventKeys.current.size > 200) seenEventKeys.current.clear();
+      }
+
       if (msg.type === "fall_alert" && msg.event_id) {
         incidentEverFired.current = true;
         setHasActiveIncident(true);
@@ -115,6 +143,9 @@ export default function ResponderDashboardClient({ userId, userName, isAuthorize
         setTranscript([]);
         setIsThinking(false);
         setPendingResolve(null);
+        setSelfRecovered(false);
+        setEscalated(false);
+        seenEventKeys.current.clear();
         incidentIdRef.current = null;
         setStatus("UNACKNOWLEDGED");
         setIncidentId(null);
@@ -154,45 +185,43 @@ export default function ResponderDashboardClient({ userId, userName, isAuthorize
           }
         } catch { /* non-critical */ }
       }
-      if (msg.type === "sos_alert" && msg.event_id) {
-        incidentEverFired.current = true;
-        setHasActiveIncident(true);
-        setEventLog([]);
-        setTranscript([]);
-        setIsThinking(false);
-        setPendingResolve(null);
-        incidentIdRef.current = null;
-        setStatus("UNACKNOWLEDGED");
-        setIncidentId(null);
-        setSystemState("SOS");
-        setActiveAlert({
-          eventId: msg.event_id,
-          type: "sos",
-          timestamp: msg.timestamp,
-        });
-        try {
-          const res = await fetch("/api/incidents", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              eventId: msg.event_id,
-              type: "SOS",
-              personId: 0,
-              ar: 0,
-              downDuration: 0,
-            }),
-          });
-          if (res.ok) {
-            const newId = (await res.json()).id;
-            incidentIdRef.current = newId;
-            setIncidentId(newId);
-            addEvent("sos", "SOS gesture — manual emergency", msg.timestamp, true, newId);
-          }
-        } catch { /* non-critical */ }
-      }
       if (msg.type === "recovery") {
-        addEvent("recovery", `Person ${msg.person_id ?? 0} recovered`, msg.timestamp);
-        setSystemState("STABLE");
+        if (msg.auto_resolved) {
+          // Person got up before the 15 s timer fired — self-resolved
+          addEvent("recovery", `Person ${msg.person_id ?? 0} self-recovered — no responder needed`, msg.timestamp);
+          setSelfRecovered(true);
+          setSystemState("STABLE");
+          // Update DB incident to RESOLVED then auto-dismiss after 3 s
+          if (incidentIdRef.current) {
+            fetch(`/api/incidents/${incidentIdRef.current}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ status: "RESOLVED" }),
+            }).catch(() => {});
+          }
+          setTimeout(() => {
+            setActiveAlert(null);
+            setEventLog([]);
+            setTranscript([]);
+            setIsThinking(false);
+            setSelfRecovered(false);
+            setEscalated(false);
+            setIncidentId(null);
+            setStatus("UNACKNOWLEDGED");
+            incidentIdRef.current = null;
+            seenMids.current.clear();
+            setHasActiveIncident(false);
+          }, 3000);
+        } else {
+          // Recovery happened after escalation — log it but keep incident open
+          addEvent("recovery", `Person ${msg.person_id ?? 0} got up — verify condition on scene`, msg.timestamp);
+          setSystemState("STABLE");
+        }
+      }
+      if (msg.type === "escalation") {
+        // 15 s elapsed with no ACK — lock in as active incident
+        setEscalated(true);
+        addEvent("ack", "No response — incident escalated to active", msg.timestamp, true);
       }
       if (msg.type === "voice_alert" && msg.message) {
         // Deduplicate: two WS connections (React StrictMode) can deliver the same message twice
@@ -212,9 +241,11 @@ export default function ResponderDashboardClient({ userId, userName, isAuthorize
           { speaker, text: msg.message!, timestamp: msg.timestamp },
         ]);
         if (speaker === "user") {
+          setMicListening(false);
+          setMicSpeaking(false);
           setIsThinking(true);
         } else {
-          setIsThinking(false);  // AI replied → clear thinking dots
+          setIsThinking(false);   // AI replied → clear thinking dots
         }
       }
       if (msg.type === "call_status") {
@@ -260,6 +291,8 @@ export default function ResponderDashboardClient({ userId, userName, isAuthorize
   const onCallStop = useCallback(async () => {
     setCallActive(false);
     setIsThinking(false);
+    setMicListening(false);
+    setMicSpeaking(false);
     try { await fetch(`${API_URL}/call/stop`, { method: "POST" }); } catch { /* non-critical */ }
   }, [API_URL]);
 
@@ -281,14 +314,17 @@ export default function ResponderDashboardClient({ userId, userName, isAuthorize
     send({ type: "acknowledge", event_id: activeAlert.eventId });
     setStatus("ACKNOWLEDGED");
     addEvent("ack", `Acknowledged by ${userName}`, Date.now() / 1000);
-    if (alertIncidentId) {
-      await fetch(`/api/incidents/${alertIncidentId}`, {
+    // Use ref (set synchronously) instead of state to avoid race condition
+    // where the user clicks before the state update has propagated.
+    const iid = incidentIdRef.current;
+    if (iid) {
+      await fetch(`/api/incidents/${iid}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "ACKNOWLEDGED", acknowledgedBy: userId }),
       });
     }
-  }, [activeAlert, send, addEvent, alertIncidentId, userId, userName]);
+  }, [activeAlert, send, addEvent, userId, userName]);
 
   const updateStatus = useCallback(async (newStatus: IncidentStatus) => {
     setStatus(newStatus);
@@ -299,8 +335,9 @@ export default function ResponderDashboardClient({ userId, userName, isAuthorize
       FALSE_ALARM: "Marked as false alarm",
     };
     addEvent("ack", label[newStatus] ?? newStatus, Date.now() / 1000);
-    if (alertIncidentId) {
-      await fetch(`/api/incidents/${alertIncidentId}`, {
+    const iid = incidentIdRef.current;
+    if (iid) {
+      await fetch(`/api/incidents/${iid}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
@@ -318,6 +355,8 @@ export default function ResponderDashboardClient({ userId, userName, isAuthorize
         setEventLog([]);
         setTranscript([]);
         setIsThinking(false);
+        setSelfRecovered(false);
+        setEscalated(false);
         setIncidentId(null);
         setStatus("UNACKNOWLEDGED");
         setSystemState("STABLE");
@@ -325,14 +364,14 @@ export default function ResponderDashboardClient({ userId, userName, isAuthorize
         incidentEverFired.current = false;
         incidentIdRef.current = null;
         seenMids.current.clear();
+        seenEventKeys.current.clear();
         setHasActiveIncident(false);
       }, 1500);
     }
-  }, [alertIncidentId, addEvent, callActive, API_URL, setHasActiveIncident]);
+  }, [addEvent, callActive, API_URL, setHasActiveIncident]);
 
   const isAlarming = activeAlert !== null;
-  const isFall     = activeAlert?.type === "fall";
-  const alertColor = isFall ? colors.danger : colors.warning;
+  const alertColor = colors.danger;
 
   return (
     <div className='h-full flex flex-col gap-2'>
@@ -341,15 +380,13 @@ export default function ResponderDashboardClient({ userId, userName, isAuthorize
       <div className='shrink-0 flex items-center justify-between px-3 h-9 bg-surface border border-line rounded'>
         <div className='flex items-center gap-2.5'>
           <StatusBadge
-            status={systemState === "SOS" ? "SOS" : systemState}
+            status={systemState}
             size='sm'
             pulse={isAlarming}
           />
           <span className='text-[11px] text-fg-muted hidden sm:block'>
             {isAlarming
-              ? isFall
-                ? `Person ${activeAlert.personId} · AR ${activeAlert.ar?.toFixed(2)} · ${activeAlert.downDuration?.toFixed(1)}s`
-                : "Manual SOS gesture detected"
+              ? `Person ${activeAlert.personId} · AR ${activeAlert.ar?.toFixed(2)} · ${activeAlert.downDuration?.toFixed(1)}s`
               : "Normal"}
           </span>
         </div>
@@ -392,12 +429,23 @@ export default function ResponderDashboardClient({ userId, userName, isAuthorize
           <div
             className='shrink-0 rounded border overflow-hidden transition-colors duration-300'
             style={{
-              background:  isAlarming ? rgba(alertColor, 0.05) : colors.surface,
-              borderColor: isAlarming ? rgba(alertColor, 0.22) : colors.line,
+              background:  selfRecovered ? rgba(colors.success, 0.05) : isAlarming ? rgba(alertColor, 0.05) : colors.surface,
+              borderColor: selfRecovered ? rgba(colors.success, 0.22) : isAlarming ? rgba(alertColor, 0.22) : colors.line,
             }}
           >
             <div className='p-3 max-h-[264px] overflow-y-auto'>
-              {!isAlarming ? (
+              {selfRecovered ? (
+
+                /* ── Self-recovery state: person got up before 15 s ── */
+                <div className='flex items-center gap-2.5'>
+                  <CheckCircle size={15} className='shrink-0' style={{ color: colors.success }} />
+                  <div>
+                    <p className='text-xs font-semibold' style={{ color: colors.success }}>Person self-recovered</p>
+                    <p className='section-label mt-0'>no responder needed — dismissing…</p>
+                  </div>
+                </div>
+
+              ) : !isAlarming ? (
 
                 /* ── Idle state: compact single-line strip ─────────── */
                 <div className='flex items-center gap-2.5'>
@@ -416,21 +464,19 @@ export default function ResponderDashboardClient({ userId, userName, isAuthorize
                   {/* Headline */}
                   <div>
                     <p className='section-label mb-0.5' style={{ color: alertColor }}>
-                      {isFall ? "fall detected" : "sos alert"}
+                      fall detected
                     </p>
                     <p className='text-xl font-bold text-fg leading-tight'>
-                      {isFall ? `Person ${activeAlert.personId}` : "Manual SOS"}
+                      Person {activeAlert.personId}
                     </p>
-                    {isFall && (
-                      <div className='flex items-center gap-3 mt-1'>
-                        <span className='font-mono text-[11px] text-fg-muted'>
-                          AR <span className='text-fg'>{activeAlert.ar?.toFixed(2)}</span>
-                        </span>
-                        <span className='font-mono text-[11px] text-fg-muted'>
-                          DOWN <span className='text-fg'>{activeAlert.downDuration?.toFixed(1)}s</span>
-                        </span>
-                      </div>
-                    )}
+                    <div className='flex items-center gap-3 mt-1'>
+                      <span className='font-mono text-[11px] text-fg-muted'>
+                        AR <span className='text-fg'>{activeAlert.ar?.toFixed(2)}</span>
+                      </span>
+                      <span className='font-mono text-[11px] text-fg-muted'>
+                        DOWN <span className='text-fg'>{activeAlert.downDuration?.toFixed(1)}s</span>
+                      </span>
+                    </div>
                   </div>
 
                   <div className='h-px bg-line' />
@@ -438,7 +484,16 @@ export default function ResponderDashboardClient({ userId, userName, isAuthorize
                   {/* Unacknowledged: countdown + ACK button */}
                   {incidentStatus === "UNACKNOWLEDGED" && (
                     <>
-                      <CountdownBar seconds={15} color={alertColor} />
+                      <CountdownBar seconds={15} color={alertColor} stopped={selfRecovered} />
+                      {escalated && (
+                        <div
+                          className='flex items-center gap-1.5 px-2 py-1.5 rounded text-[11px] font-semibold'
+                          style={{ background: rgba(colors.danger, 0.10), color: colors.danger, border: `1px solid ${rgba(colors.danger, 0.22)}` }}
+                        >
+                          <Activity size={11} />
+                          Active incident — responder action required
+                        </div>
+                      )}
                       <button
                         onClick={acknowledge}
                         className='w-full py-2.5 rounded font-semibold text-xs border-none cursor-pointer transition-opacity hover:opacity-90 active:opacity-75'
@@ -534,6 +589,8 @@ export default function ResponderDashboardClient({ userId, userName, isAuthorize
               activeIncident={activeAlert}
               incidentUnlocked={incidentEverFired.current}
               isThinking={isThinking}
+              micListening={micListening}
+              micSpeaking={micSpeaking}
             />
           </div>
 

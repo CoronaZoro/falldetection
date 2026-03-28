@@ -23,8 +23,10 @@ export default function AdminUsersClient() {
   const [error, setError]         = useState("");
 
   async function load() {
-    const res = await fetch("/api/admin/users");
-    setUsers(await res.json());
+    try {
+      const res = await fetch("/api/admin/users");
+      if (res.ok) setUsers(await res.json());
+    } catch { /* network error — keep empty list */ }
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
@@ -100,9 +102,9 @@ export default function AdminUsersClient() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={6} className='py-8 text-center text-fg-muted'>Loading...</td></tr>
+                <tr><td colSpan={7} className='py-8 text-center text-fg-muted'>Loading...</td></tr>
               ) : users.length === 0 ? (
-                <tr><td colSpan={6} className='py-8 text-center text-fg-muted'>No users</td></tr>
+                <tr><td colSpan={7} className='py-8 text-center text-fg-muted'>No users</td></tr>
               ) : (
                 users.map((u) => (
                   <tr key={u.id} className='border-b border-line'>

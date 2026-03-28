@@ -34,12 +34,16 @@ cd dashboard && npm run dev
 
 ## Phase 1 — Python Detection Engine ✅
 
-- YOLO11 Nano model classifies poses: `up`, `bending`, `down`
+- **Roboflow `inference` SDK** — model runs **locally on-device**, no network call per frame (~30–80 ms on M2)
+- Model downloaded once on first run via `get_model(model_id, api_key)` and cached on disk
+- Roboflow credentials loaded from `.env` (`ROBOFLOW_API_KEY`, `ROBOFLOW_PROJECT`, `ROBOFLOW_VERSION`)
+- Prediction format converted from inference SDK center-based (`pred.x`, `pred.y`, `pred.width`, `pred.height`) to corner-based (x1, y1, x2, y2) for state machine
+- Class label accessed via `pred.class_name` (no CLASSES dict needed)
 - State machine: STABLE → TRANSITION → VALIDATION → INACTIVITY → ALARM → RECOVERY
-- SOS gesture: palm → fist sequence via MediaPipe
 - FastAPI WebSocket server on port 8765
 - MJPEG video stream at http://localhost:8765/video (annotated with bounding boxes, AR, banners)
 - 15-second ACK timer: if no responder acknowledges, `_escalate()` fires (hookable for future alerting)
+- **SOS hand gesture removed** — `sos_gesture.py` and all SOS detection code scrapped
 
 ---
 
@@ -148,9 +152,16 @@ by `alerts/server.py` with a clean REST API.
 - [x] Changes before a call are sent with `/call/start` payload
 
 ### Event Log Cleanup
-- [x] Removed `voice` and `heartbeat` types from EventLog — only `fall`, `sos`, `recovery`, `ack`
+- [x] EventLog only handles `fall`, `recovery`, `ack` — voice/heartbeat/SOS removed
 - [x] Voice transcripts moved to incident detail Transcript tab only
 - [x] `EventLogEntry` type updated accordingly
+
+### SOS & Twilio Removed
+- [x] `sos_gesture.py` and all SOS detection code removed from Python engine
+- [x] `broadcast_sos` removed from `server.py`
+- [x] `sos_alert` WebSocket handler removed from dashboard
+- [x] SOS removed from `IncidentType` enum, `EventLogEntry`, `WSMessage`, `StatusBadge`, `EventLog`, `ChatPanel`
+- [x] Twilio fields (`twilioEnabled`, `twilioNumber`) removed from `SystemConfig` schema + DB
 
 ---
 
@@ -173,7 +184,6 @@ by `alerts/server.py` with a clean REST API.
 |-----------|-------------|--------|
 | Python → Dashboard | `heartbeat` | persons_detected |
 | Python → Dashboard | `fall_alert` | event_id, person_id, ar, down_duration |
-| Python → Dashboard | `sos_alert` | event_id |
 | Python → Dashboard | `recovery` | person_id |
 | Python → Dashboard | `voice_alert` | message, speaker ("user"\|"assistant"), mid (dedup ID) |
 | Python → Dashboard | `call_status` | callStatus ("active"\|"idle") |

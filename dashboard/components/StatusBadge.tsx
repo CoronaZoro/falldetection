@@ -23,7 +23,6 @@ const CONFIG: Record<
   ONLINE:  { label: "ONLINE",  color: colors.success, bg: rgba(colors.success, 0.08), border: rgba(colors.success, 0.18) },
   OFFLINE: { label: "OFFLINE", color: colors.danger,  bg: rgba(colors.danger,  0.10), border: rgba(colors.danger,  0.22) },
   FALL:    { label: "FALL",    color: colors.danger,  bg: rgba(colors.danger,  0.10), border: rgba(colors.danger,  0.22) },
-  SOS:     { label: "SOS",     color: colors.warning, bg: rgba(colors.warning, 0.08), border: rgba(colors.warning, 0.20) },
   ADMIN:   { label: "ADMIN",   color: colors.accent,  bg: rgba(colors.accent,  0.08), border: rgba(colors.accent,  0.20) },
   RESPONDER: { label: "RESPONDER", color: colors.info, bg: rgba(colors.info,   0.08), border: rgba(colors.info,   0.20) },
 };

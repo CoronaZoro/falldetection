@@ -1,5 +1,5 @@
 export type Role = "ADMIN" | "RESPONDER";
-export type IncidentType = "FALL" | "SOS";
+export type IncidentType = "FALL";
 export type IncidentStatus =
   | "UNACKNOWLEDGED"
   | "ACKNOWLEDGED"
@@ -9,7 +9,7 @@ export type IncidentStatus =
   | "FALSE_ALARM";
 
 export interface WSMessage {
-  type: "heartbeat" | "fall_alert" | "sos_alert" | "recovery" | "voice_alert" | "call_status";
+  type: "heartbeat" | "fall_alert" | "recovery" | "escalation" | "voice_alert" | "call_status" | "mic_status";
   timestamp: number;
   event_id?: string;
   person_id?: number;
@@ -20,6 +20,7 @@ export interface WSMessage {
   speaker?: "user" | "assistant";
   mid?: number;                       // voice_alert dedup ID
   callStatus?: "active" | "idle";
+  auto_resolved?: boolean;
   status?: string;
   persons_detected?: number;
 }
@@ -68,14 +69,12 @@ export interface SystemConfig {
   arThreshold: number;
   transitionTime: number;
   confirmSeconds: number;
-  twilioEnabled: boolean;
-  twilioNumber: string | null;
   escalationSeconds: number;
 }
 
 export interface EventLogEntry {
   id: string;
-  type: "fall" | "sos" | "recovery" | "ack";
+  type: "fall" | "recovery" | "ack";
   message: string;
   timestamp: number;
 }

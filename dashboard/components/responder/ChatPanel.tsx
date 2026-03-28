@@ -11,13 +11,12 @@ import {
   ShieldCheck,
   ShieldOff,
   AlertTriangle,
-  Siren,
   Lock,
 } from "lucide-react";
 import type { VoiceEntry } from "@/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Constants
+// consts
 // ─────────────────────────────────────────────────────────────────────────────
 
 const LANGUAGES = ["English", "Thai", "Japanese", "Chinese"] as const;
@@ -26,14 +25,25 @@ type Language = (typeof LANGUAGES)[number];
 const SPEEDS = ["0.5x", "0.75x", "1x", "1.25x", "1.5x", "2x"] as const;
 type Speed = (typeof SPEEDS)[number];
 
-// Sensitivity → energy_threshold (how loud audio must be to register as speech)
-const SENSITIVITIES = ["Low", "Medium", "High", "Very High"] as const;
+// Sensitivity → energy_threshold, which the backend maps to webrtcvad aggressiveness (0–3).
+// Higher aggressiveness = more filtering = only clear speech triggers capture.
+//   Sensitive   → threshold  100 → aggressiveness 0  (soft voices, quiet rooms)
+//   Balanced    → threshold  300 → aggressiveness 1  (normal indoor speech, default)
+//   Clear       → threshold  600 → aggressiveness 2  (clear/normal speech, some noise)
+//   Strict      → threshold 1200 → aggressiveness 3  (crisp/loud speech, noisy rooms)
+const SENSITIVITIES = ["Sensitive", "Balanced", "Clear", "Strict"] as const;
 type Sensitivity = (typeof SENSITIVITIES)[number];
 const SENSITIVITY_MAP: Record<Sensitivity, number> = {
-  Low:        200,   // picks up quiet speech; more sensitive to noise
-  Medium:     400,   // default — balanced for a typical indoor environment
-  High:       800,   // requires clearly-spoken speech; fewer false triggers
-  "Very High": 1500, // only loud clear speech; best in a noisy environment
+  Sensitive: 100, // VAD level 0 — picks up whispers; most susceptible to noise
+  Balanced: 300, // VAD level 1 — default; works for most indoor environments
+  Clear: 600, // VAD level 2 — requires clear speech; fewer false triggers
+  Strict: 1200, // VAD level 3 — noisy room / loud environment
+};
+const SENSITIVITY_HINT: Record<Sensitivity, string> = {
+  Sensitive: "Soft voices · quiet room",
+  Balanced: "Normal speech · indoors",
+  Clear: "Clear speech · some noise",
+  Strict: "Loud speech · noisy room",
 };
 
 // Pause-after-speech → pause_threshold (silence before phrase is sent)
@@ -44,19 +54,21 @@ const PAUSE_MAP: Record<Pause, number> = {
   "0.8s": 0.8,
   "1.2s": 1.2,
   "1.5s": 1.5,
-  "2s":   2.0,
-  "3s":   3.0,
+  "2s": 2.0,
+  "3s": 3.0,
 };
 
-/** Typewriter delay (ms per character). Fixed — keeps text readable regardless of TTS speed. */
+/** Typewriter delay for AI messages — paced to feel deliberate */
 const CHAR_DELAY_MS = 22;
+/** Typewriter delay for user messages — faster, feels like live dictation */
+const USER_CHAR_DELAY_MS = 12;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface ActiveIncident {
-  type: "fall" | "sos";
+  type: "fall";
   personId?: number;
   ar?: number;
   downDuration?: number;
@@ -66,14 +78,26 @@ interface Props {
   isAuthorized: boolean;
   transcript: VoiceEntry[]; // all entries (user + AI), already committed
   callActive: boolean;
-  onCallStart: (lang: Language, speed: Speed, sensitivity: number, pauseAfter: number) => Promise<void>;
+  onCallStart: (
+    lang: Language,
+    speed: Speed,
+    sensitivity: number,
+    pauseAfter: number,
+  ) => Promise<void>;
   onCallStop: () => Promise<void>;
   language: Language;
   speed: Speed;
-  onCallSettings: (lang: Language, speed: Speed, sensitivity: number, pauseAfter: number) => Promise<void>;
+  onCallSettings: (
+    lang: Language,
+    speed: Speed,
+    sensitivity: number,
+    pauseAfter: number,
+  ) => Promise<void>;
   activeIncident: ActiveIncident | null;
   incidentUnlocked: boolean; // true once first incident fires this session
   isThinking: boolean; // AI is generating → show "..." dots
+  micListening: boolean; // mic is open (waiting or capturing)
+  micSpeaking: boolean; // VAD has detected speech — user is talking
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -92,47 +116,44 @@ export default function ChatPanel({
   activeIncident,
   incidentUnlocked,
   isThinking,
+  micListening,
+  micSpeaking,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Local picker state — synced from props but editable locally before confirming
-  const [localLang, setLocalLang]           = useState<Language>(language);
-  const [localSpeed, setLocalSpeed]         = useState<Speed>(speed);
-  const [localSens, setLocalSens]           = useState<Sensitivity>("Medium");
-  const [localPause, setLocalPause]         = useState<Pause>("1.2s");
+  const [localLang, setLocalLang] = useState<Language>(language);
+  const [localSpeed, setLocalSpeed] = useState<Speed>(speed);
+  const [localSens, setLocalSens] = useState<Sensitivity>("Balanced");
+  const [localPause, setLocalPause] = useState<Pause>("1.2s");
 
   // ── In-place typewriter state ─────────────────────────────────────────────
-  // We track the timestamp of the AI entry currently being animated and how
-  // many characters have been revealed. When the latest AI message changes
-  // (new timestamp), we restart the animation for that entry only.
+  // Tracks the timestamp of the entry currently being animated + how many
+  // chars have been revealed. Works for both user and assistant messages.
   const [animatingTs, setAnimatingTs] = useState<number | null>(null);
   const [displayedLen, setDisplayedLen] = useState(0);
   const animIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const prevLastAITs = useRef<number | null>(null);
+  const prevLastTs = useRef<number | null>(null);
 
   // ── Sync pickers when parent changes ─────────────────────────────────────
   useEffect(() => setLocalLang(language), [language]);
   useEffect(() => setLocalSpeed(speed), [speed]);
 
-  // ── Start typewriter when a new AI entry lands in transcript ─────────────
+  // ── Typewriter: animate every new message (user = fast, AI = paced) ──────
   useEffect(() => {
-    // Find the most-recent assistant entry
-    const lastAI = [...transcript]
-      .reverse()
-      .find((e) => e.speaker === "assistant");
-    if (!lastAI) return;
-    // Skip if it's the same entry we already animated
-    if (lastAI.timestamp === prevLastAITs.current) return;
-    prevLastAITs.current = lastAI.timestamp;
+    const lastEntry = transcript[transcript.length - 1];
+    if (!lastEntry) return;
+    if (lastEntry.timestamp === prevLastTs.current) return;
+    prevLastTs.current = lastEntry.timestamp;
 
-    // Clear any previous animation
     if (animIntervalRef.current) clearInterval(animIntervalRef.current);
-
-    setAnimatingTs(lastAI.timestamp);
+    setAnimatingTs(lastEntry.timestamp);
     setDisplayedLen(0);
 
     let len = 0;
-    const totalLen = lastAI.text.length;
+    const totalLen = lastEntry.text.length;
+    const delay =
+      lastEntry.speaker === "user" ? USER_CHAR_DELAY_MS : CHAR_DELAY_MS;
 
     animIntervalRef.current = setInterval(() => {
       len++;
@@ -140,9 +161,9 @@ export default function ChatPanel({
       if (len >= totalLen) {
         clearInterval(animIntervalRef.current!);
         animIntervalRef.current = null;
-        setAnimatingTs(null); // animation complete — render full text normally
+        setAnimatingTs(null);
       }
-    }, CHAR_DELAY_MS);
+    }, delay);
 
     return () => {
       if (animIntervalRef.current) clearInterval(animIntervalRef.current);
@@ -154,27 +175,47 @@ export default function ChatPanel({
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [transcript, isThinking, displayedLen]);
+  }, [transcript, isThinking, micListening, displayedLen]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   function handleLangChange(lang: Language) {
     setLocalLang(lang);
-    onCallSettings(lang, localSpeed, SENSITIVITY_MAP[localSens], PAUSE_MAP[localPause]);
+    onCallSettings(
+      lang,
+      localSpeed,
+      SENSITIVITY_MAP[localSens],
+      PAUSE_MAP[localPause],
+    );
   }
 
   function handleSpeedChange(spd: Speed) {
     setLocalSpeed(spd);
-    onCallSettings(localLang, spd, SENSITIVITY_MAP[localSens], PAUSE_MAP[localPause]);
+    onCallSettings(
+      localLang,
+      spd,
+      SENSITIVITY_MAP[localSens],
+      PAUSE_MAP[localPause],
+    );
   }
 
   function handleSensChange(sens: Sensitivity) {
     setLocalSens(sens);
-    onCallSettings(localLang, localSpeed, SENSITIVITY_MAP[sens], PAUSE_MAP[localPause]);
+    onCallSettings(
+      localLang,
+      localSpeed,
+      SENSITIVITY_MAP[sens],
+      PAUSE_MAP[localPause],
+    );
   }
 
   function handlePauseChange(pause: Pause) {
     setLocalPause(pause);
-    onCallSettings(localLang, localSpeed, SENSITIVITY_MAP[localSens], PAUSE_MAP[pause]);
+    onCallSettings(
+      localLang,
+      localSpeed,
+      SENSITIVITY_MAP[localSens],
+      PAUSE_MAP[pause],
+    );
   }
 
   const hasTranscript = transcript.length > 0 || isThinking;
@@ -188,7 +229,7 @@ export default function ChatPanel({
       <div className='shrink-0 flex items-center justify-between px-3 py-2 border-b border-line'>
         <div className='flex items-center gap-1.5'>
           <Mic size={11} className='text-accent' />
-          <span className='section-label'>Voice Assistant</span>
+          <span className='section-label'>Paladin</span>
         </div>
         <div className='flex items-center gap-2'>
           {callActive && (
@@ -226,8 +267,8 @@ export default function ChatPanel({
           <div>
             <p className='text-xs font-medium text-fg'>Waiting for emergency</p>
             <p className='text-[10px] text-fg-muted mt-0.5'>
-              Voice assistant will automatically activate when an incident is
-              detected.
+              Paladin voice assistant will automatically activate when an
+              incident is detected.
             </p>
           </div>
         </div>
@@ -244,24 +285,12 @@ export default function ChatPanel({
               }`}
             >
               <div className='flex items-center gap-1.5'>
-                {activeIncident.type === "fall" ? (
-                  <AlertTriangle size={11} className='text-danger shrink-0' />
-                ) : (
-                  <Siren size={11} className='text-warning shrink-0' />
-                )}
-                <span
-                  className={`text-[10px] font-semibold uppercase tracking-wide ${
-                    activeIncident.type === "fall"
-                      ? "text-danger"
-                      : "text-warning"
-                  }`}
-                >
-                  {activeIncident.type === "fall"
-                    ? "Fall detected"
-                    : "SOS alert"}
+                <AlertTriangle size={11} className='text-danger shrink-0' />
+                <span className='text-[10px] font-semibold uppercase tracking-wide text-danger'>
+                  Fall detected
                 </span>
               </div>
-              {activeIncident.type === "fall" && (
+              {
                 <div className='flex items-center gap-3 pl-0.5'>
                   {activeIncident.personId !== undefined && (
                     <span className='font-mono text-[10px] text-fg-muted'>
@@ -286,7 +315,7 @@ export default function ChatPanel({
                     </span>
                   )}
                 </div>
-              )}
+              }
               <p className='text-[10px] text-fg-muted pl-0.5'>
                 Bot will be briefed on this incident
               </p>
@@ -323,33 +352,47 @@ export default function ChatPanel({
             ))}
           </div>
 
-          {/* Mic detection settings */}
+          {/* Voice Detection (WebRTC VAD) settings */}
           <div className='w-full border-t border-line/50 pt-2.5 flex flex-col gap-2'>
-            <p className='text-[10px] text-fg-muted text-center uppercase tracking-wide'>Mic Detection</p>
+            <div className='flex items-center justify-center gap-1.5'>
+              <p className='text-[10px] text-fg-muted uppercase tracking-wide'>
+                Voice Detection Threshold
+              </p>
+              <span className='text-[9px] font-mono text-fg-muted/60 bg-line/60 px-1 py-0.5 rounded'>
+                WebRTC VAD
+              </span>
+            </div>
 
-            {/* Sensitivity */}
+            {/* VAD aggressiveness / sensitivity */}
             <div className='flex flex-col gap-1'>
               <p className='text-[10px] text-fg-muted pl-0.5'>Sensitivity</p>
-              <div className='flex items-center gap-1 flex-wrap'>
+              <div className='grid grid-cols-2 gap-1'>
                 {SENSITIVITIES.map((s) => (
                   <button
                     key={s}
                     onClick={() => setLocalSens(s)}
-                    className={`px-2 py-0.5 rounded text-[10px] border cursor-pointer transition-colors ${
+                    className={`flex flex-col items-start px-2 py-1 rounded border cursor-pointer transition-colors ${
                       localSens === s
                         ? "bg-info/15 border-info/40 text-info"
-                        : "bg-transparent border-line text-fg-muted hover:text-fg"
+                        : "bg-transparent border-line text-fg-muted hover:text-fg hover:border-line-muted"
                     }`}
                   >
-                    {s}
+                    <span className='text-[10px] font-medium'>{s}</span>
+                    <span
+                      className={`text-[9px] leading-tight ${localSens === s ? "text-info/70" : "text-fg-muted/60"}`}
+                    >
+                      {SENSITIVITY_HINT[s]}
+                    </span>
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Pause after speech */}
+            {/* Pause after speech — maps to VAD silence_secs */}
             <div className='flex flex-col gap-1'>
-              <p className='text-[10px] text-fg-muted pl-0.5'>Pause after speech</p>
+              <p className='text-[10px] text-fg-muted pl-0.5'>
+                Silence before send
+              </p>
               <div className='flex items-center gap-1 flex-wrap'>
                 {PAUSES.map((p) => (
                   <button
@@ -365,12 +408,22 @@ export default function ChatPanel({
                   </button>
                 ))}
               </div>
+              <p className='text-[9px] text-fg-muted/60 pl-0.5'>
+                Silence duration after your voice stops before sending
+              </p>
             </div>
           </div>
 
           {/* Call button */}
           <button
-            onClick={() => onCallStart(localLang, localSpeed, SENSITIVITY_MAP[localSens], PAUSE_MAP[localPause])}
+            onClick={() =>
+              onCallStart(
+                localLang,
+                localSpeed,
+                SENSITIVITY_MAP[localSens],
+                PAUSE_MAP[localPause],
+              )
+            }
             className={`relative flex items-center justify-center w-14 h-14 rounded-full cursor-pointer transition-all hover:scale-105 active:scale-95 ${
               activeIncident
                 ? "bg-danger/15 border border-danger/30 hover:bg-danger/25"
@@ -412,9 +465,8 @@ export default function ChatPanel({
           className='flex-1 min-h-0 overflow-y-auto flex flex-col gap-1.5 px-2.5 py-2'
         >
           {transcript.map((entry, i) => {
-            // Latest AI entry gets the typewriter treatment
-            const isAnimating =
-              entry.speaker === "assistant" && entry.timestamp === animatingTs;
+            // Latest entry (user or AI) gets the typewriter treatment
+            const isAnimating = entry.timestamp === animatingTs;
             const text = isAnimating
               ? entry.text.slice(0, displayedLen)
               : entry.text;
@@ -436,7 +488,15 @@ export default function ChatPanel({
                 >
                   {text}
                   {isAnimating && (
-                    <span className='inline-block w-0.5 h-3 bg-accent ml-0.5 animate-pulse align-middle' />
+                    <span
+                      className='inline-block w-0.5 h-3 ml-0.5 animate-pulse align-middle'
+                      style={{
+                        background:
+                          entry.speaker === "user"
+                            ? "var(--color-info)"
+                            : "var(--color-accent)",
+                      }}
+                    />
                   )}
                 </p>
                 {entry.speaker === "user" && (
@@ -453,6 +513,22 @@ export default function ChatPanel({
               <div className='bg-accent/10 rounded-lg rounded-bl-none px-3 py-2'>
                 <ThinkingDots />
               </div>
+            </div>
+          )}
+
+          {/* Mic indicator — static dot while waiting, waveform only when speech is detected */}
+          {micListening && !isThinking && (
+            <div className='flex gap-2 items-center justify-end'>
+              {micSpeaking ? (
+                <ListeningWaveform />
+              ) : (
+                <>
+                  <span className='text-[10px] text-fg-muted/60 italic'>
+                    listening…
+                  </span>
+                  <span className='w-1.5 h-1.5 rounded-full bg-fg-muted/40 animate-pulse' />
+                </>
+              )}
             </div>
           )}
         </div>
@@ -479,7 +555,9 @@ export default function ChatPanel({
                   className='bg-page border border-line rounded px-1.5 py-1 text-[10px] text-fg outline-none focus:border-info transition-colors cursor-pointer'
                 >
                   {LANGUAGES.map((l) => (
-                    <option key={l} value={l}>{l}</option>
+                    <option key={l} value={l}>
+                      {l}
+                    </option>
                   ))}
                 </select>
                 <select
@@ -488,7 +566,9 @@ export default function ChatPanel({
                   className='bg-page border border-line rounded px-1.5 py-1 text-[10px] font-mono text-fg outline-none focus:border-info transition-colors cursor-pointer'
                 >
                   {SPEEDS.map((s) => (
-                    <option key={s} value={s}>{s}</option>
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
                   ))}
                 </select>
                 <button
@@ -496,28 +576,38 @@ export default function ChatPanel({
                   className='flex items-center gap-1 bg-danger/15 hover:bg-danger/25 border border-danger/30 rounded-full px-2.5 py-1.5 cursor-pointer transition-all active:scale-95'
                 >
                   <PhoneOff size={11} className='text-danger' />
-                  <span className='text-[10px] font-semibold text-danger'>End</span>
+                  <span className='text-[10px] font-semibold text-danger'>
+                    End
+                  </span>
                 </button>
               </div>
-              {/* Row 2: mic detection settings */}
+              {/* Row 2: VAD sensitivity + silence threshold */}
               <div className='flex items-center gap-1.5'>
-                <span className='text-[10px] text-fg-muted shrink-0'>Mic:</span>
+                <span className='text-[9px] font-mono text-fg-muted/60 shrink-0 bg-line/60 px-1 py-0.5 rounded'>
+                  VAD
+                </span>
                 <select
                   value={localSens}
-                  onChange={(e) => handleSensChange(e.target.value as Sensitivity)}
+                  onChange={(e) =>
+                    handleSensChange(e.target.value as Sensitivity)
+                  }
                   className='bg-page border border-line rounded px-1.5 py-1 text-[10px] text-fg outline-none focus:border-info transition-colors cursor-pointer flex-1'
                 >
                   {SENSITIVITIES.map((s) => (
-                    <option key={s} value={s}>{s}</option>
+                    <option key={s} value={s}>
+                      {s} — {SENSITIVITY_HINT[s]}
+                    </option>
                   ))}
                 </select>
                 <select
                   value={localPause}
                   onChange={(e) => handlePauseChange(e.target.value as Pause)}
-                  className='bg-page border border-line rounded px-1.5 py-1 text-[10px] font-mono text-fg outline-none focus:border-info transition-colors cursor-pointer flex-1'
+                  className='bg-page border border-line rounded px-1.5 py-1 text-[10px] font-mono text-fg outline-none focus:border-info transition-colors cursor-pointer'
                 >
                   {PAUSES.map((p) => (
-                    <option key={p} value={p}>{p}</option>
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -548,7 +638,14 @@ export default function ChatPanel({
                 ))}
               </select>
               <button
-                onClick={() => onCallStart(localLang, localSpeed, SENSITIVITY_MAP[localSens], PAUSE_MAP[localPause])}
+                onClick={() =>
+                  onCallStart(
+                    localLang,
+                    localSpeed,
+                    SENSITIVITY_MAP[localSens],
+                    PAUSE_MAP[localPause],
+                  )
+                }
                 className='flex items-center gap-1.5 bg-success/15 hover:bg-success/25 border border-success/30 rounded-full px-3 py-1.5 cursor-pointer transition-all active:scale-95'
               >
                 <Phone size={11} className='text-success' />
@@ -591,5 +688,40 @@ function ThinkingDots() {
         />
       ))}
     </span>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ListeningWaveform — animated audio-bar visualiser shown while WebRTC VAD
+// is actively monitoring the microphone between AI turns.
+//
+// 7 bars with staggered vad-bar keyframe delays produce an equaliser-style
+// animation that communicates "mic is open and processing audio frames"
+// without requiring any real audio level data from the backend.
+// ─────────────────────────────────────────────────────────────────────────────
+function ListeningWaveform() {
+  // Stagger amounts chosen so bars reach their peak height at different times,
+  // giving the impression of a live audio signal rather than a synchronized pulse.
+  const delays = [0, 0.13, 0.26, 0.1, 0.22, 0.05, 0.18];
+
+  return (
+    <div
+      className='flex items-end gap-[2.5px]'
+      style={{ height: 14 }}
+      aria-label='Listening'
+    >
+      {delays.map((delay, i) => (
+        <span
+          key={i}
+          className='w-[2.5px] rounded-full bg-danger/75'
+          style={{
+            animation: "vad-bar 0.85s ease-in-out infinite",
+            animationDelay: `${delay}s`,
+            // Starting height ensures bars are visible before animation kicks in
+            height: 4,
+          }}
+        />
+      ))}
+    </div>
   );
 }

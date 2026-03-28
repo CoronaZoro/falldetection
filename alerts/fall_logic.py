@@ -1,12 +1,6 @@
 """
-core/fall_logic.py — Stage Optimized Version
-Tuned for hackathon demo on flat floor.
-
-Logic:
-  - Rolling last_up_time updated every frame while standing
-  - Fast transition + high AR = fall candidate
-  - Slow transition = intentional, ignored
-  - Down 1.5s + no movement = ALARM
+alerts/fall_logic.py — per-person fall state processor.
+Fast transition + high AR triggers the alarm. Slow/intentional lie-downs are ignored.
 """
 import time
 
@@ -22,7 +16,7 @@ class FallLogic:
     def __init__(self):
         self.AR_FALL_THRESHOLD   = 1.5   # down AR 2-3, standing AR 0.9-1.3
         self.DOWN_CONFIRM        = 1.5   # seconds down before alarm
-        self.MOVEMENT_THRESHOLD  = 0.04  # micro-movement sensitivity
+        self.MOVEMENT_THRESHOLD  = 10    # px; centre must shift by this to count as moving
         self.RECOVERY_LABEL_TIME = 0.5   # seconds of up to confirm recovery
         self.MAX_TRANSITION_TIME = 1.2   # slower than this = intentional
 
@@ -55,13 +49,11 @@ class FallLogic:
         is_real_down = (label == "down" and ar > self.AR_FALL_THRESHOLD)
         is_up        = label in ["up", "bending"]
 
-        # ── Rolling up timestamp ──────────────────────────
-        # Updates every frame while standing/bending
-        # Fixes standing still → faint detection
+        # keep last_up_time rolling so standing-still doesn't look like a faint
         if is_up:
             s["last_up_time"] = now
 
-        # ── State machine ─────────────────────────────────
+
 
         if s["state"] == ALARM:
             if is_up:
@@ -72,7 +64,7 @@ class FallLogic:
                     s["reason"]     = "person_recovered"
                     s["down_since"] = None
                     s["up_since"]   = None
-                    print(f"[FallLogic] 🟢 Person {person_id} recovered")
+                    print(f"[FallLogic] Person {person_id} recovered")
             else:
                 s["up_since"] = None
 
@@ -95,7 +87,7 @@ class FallLogic:
                     # Fast drop = fall candidate
                     s["state"]  = TRANSITION
                     s["reason"] = f"fast_drop_{transition_time:.1f}s_AR={ar:.2f}"
-                    print(f"[FallLogic] ⚠️  Person {person_id} fast drop "
+                    print(f"[FallLogic] Person {person_id} fast drop "
                           f"transition={transition_time:.1f}s AR={ar:.2f}")
 
             else:
@@ -112,17 +104,19 @@ class FallLogic:
                     dy     = abs(cy - s["last_cy"])
                     moving = (dx + dy) > self.MOVEMENT_THRESHOLD
 
+                    # update so next check compares against the most recent frame
+                    s["last_cx"] = cx
+                    s["last_cy"] = cy
+
                     if not moving:
                         s["state"]       = ALARM
                         s["reason"]      = "fall_confirmed"
                         s["alarm_since"] = now
-                        print(f"[FallLogic] 🚨 ALARM person={person_id} "
+                        print(f"[FallLogic] ALARM person={person_id} "
                               f"down={down_dur:.1f}s AR={ar:.2f}")
                     else:
-                        s["state"]   = INACTIVITY
-                        s["reason"]  = "down_but_moving"
-                        s["last_cx"] = cx
-                        s["last_cy"] = cy
+                        s["state"]  = INACTIVITY
+                        s["reason"] = "down_but_moving"
 
         elif is_up:
             # Person stood up — reset everything

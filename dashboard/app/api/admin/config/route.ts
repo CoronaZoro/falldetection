@@ -13,7 +13,7 @@ export async function GET() {
   let config = await prisma.systemConfig.findFirst();
   if (!config) {
     config = await prisma.systemConfig.create({
-      data: { cameraIndex: 0, arThreshold: 1.5, transitionTime: 1.2, confirmSeconds: 1.5, twilioEnabled: false, escalationSeconds: 15 },
+      data: { cameraIndex: 0, arThreshold: 1.5, transitionTime: 1.2, confirmSeconds: 1.5, escalationSeconds: 15 },
     });
   }
   return NextResponse.json(config);

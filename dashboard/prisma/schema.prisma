@@ -48,7 +48,7 @@ model Incident {
 model IncidentLog {
   id         String   @id @default(cuid())
   incidentId String
-  type       String   // "fall" | "sos" | "recovery" | "ack" | "status"
+  type       String   // "fall" | "recovery" | "ack" | "status"
   message    String
   timestamp  DateTime @default(now())
   incident   Incident @relation(fields: [incidentId], references: [id])
@@ -65,7 +65,6 @@ model IncidentTranscript {
 
 enum IncidentType {
   FALL
-  SOS
 }
 
 enum IncidentStatus {
@@ -83,8 +82,6 @@ model SystemConfig {
   arThreshold       Float    @default(1.5)
   transitionTime    Float    @default(1.2)
   confirmSeconds    Float    @default(1.5)
-  twilioEnabled     Boolean  @default(false)
-  twilioNumber      String?
   escalationSeconds Int      @default(15)
   updatedAt         DateTime @updatedAt
 }

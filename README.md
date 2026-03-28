@@ -6,10 +6,9 @@ emergency assistant (Claude), and broadcasts everything to a live multi-user web
 
 ## Features
 
-- **Fall detection** — YOLO11 Nano model classifies pose as `up`, `bending`, or `down`
+- **Fall detection** — Roboflow hosted inference classifies pose as `up`, `bending`, or `down`
 - **State machine** — filters false positives using aspect ratio, transition time, and inactivity checks
-- **SOS gesture** — palm → fist sequence triggers a manual emergency alert
-- **WebSocket alerts** — real-time broadcasts to connected dashboards on fall, SOS, or recovery events
+- **WebSocket alerts** — real-time broadcasts to connected dashboards on fall or recovery events
 - **MJPEG live feed** — annotated video stream with bounding boxes, AR values, and state banners
 - **Voice AI assistant** — Claude-powered voice chatbot built into the server; authorized/unauthorized tiers; incident-aware context injection
 - **Multi-language voice** — auto-detects and responds in the responder's spoken language (English, Thai, Japanese, Chinese); language and speed changeable mid-call
@@ -18,7 +17,7 @@ emergency assistant (Claude), and broadcasts everything to a live multi-user web
 
 ## Tech Stack
 
-- Python 3.11 · PyTorch (MPS) · Ultralytics YOLO11 · MediaPipe · OpenCV
+- Python 3.11 · OpenCV · Roboflow `inference` SDK (local on-device inference)
 - FastAPI + Uvicorn (WebSocket alert server + MJPEG stream + voice session API)
 - Anthropic SDK (Claude Haiku — voice assistant)
 - Edge TTS + SpeechRecognition + PyAudio (voice I/O)
@@ -31,7 +30,6 @@ emergency assistant (Claude), and broadcasts everything to a live multi-user web
 falldetection/
 ├── core/
 │   ├── fall_logic.py              Fall detection state machine
-│   ├── sos_gesture.py             Hand gesture SOS trigger
 │   └── fall_detection_voice_app.py  Standalone voice app (legacy — voice now in server.py)
 ├── alerts/
 │   └── server.py                  FastAPI server — WebSocket, MJPEG, voice session endpoints
@@ -65,7 +63,7 @@ source venv/bin/activate        # macOS/Linux
 ### 2. Install Python dependencies
 
 ```bash
-pip install ultralytics mediapipe fastapi uvicorn opencv-python python-dotenv \
+pip install inference fastapi uvicorn opencv-python python-dotenv \
             anthropic SpeechRecognition pyaudio edge-tts
 ```
 
@@ -79,6 +77,10 @@ pip install ultralytics mediapipe fastapi uvicorn opencv-python python-dotenv \
 Create a `.env` file in the project root:
 ```
 ANTHROPIC_API_KEY=sk-ant-...
+ROBOFLOW_API_KEY=your_key
+ROBOFLOW_WORKSPACE=your_workspace
+ROBOFLOW_PROJECT=your_project_name
+ROBOFLOW_VERSION=1
 ```
 
 ### 4. Configure the dashboard
@@ -133,7 +135,6 @@ python training/train.py
 |-----------|-------------|-------------|
 | Python → Dashboard | `heartbeat` | Every 3s — persons detected count |
 | Python → Dashboard | `fall_alert` | Fall confirmed (event_id, person_id, AR, duration) |
-| Python → Dashboard | `sos_alert` | SOS gesture completed (event_id) |
 | Python → Dashboard | `recovery` | Person stood back up |
 | Python → Dashboard | `voice_alert` | Transcript line (speaker + text + mid dedup ID) |
 | Python → Dashboard | `call_status` | Voice session started or ended |
@@ -200,12 +201,14 @@ When a call starts during an active incident, a context block is automatically b
 
 ## How Fall Detection Works
 
-1. YOLO detects person and classifies pose (`up` / `bending` / `down`)
-2. Bounding box aspect ratio is computed — standing ≈ 0.9–1.3, fallen ≈ 2–3
-3. State machine transitions: `STABLE → TRANSITION → VALIDATION → INACTIVITY → ALARM`
-4. Transitions faster than 1.2s are flagged; slow movements (intentional lying down) are ignored
-5. Alarm requires confirmed immobility (no micro-movement for 1.5s)
-6. On recovery, `ALARM → STABLE` and a recovery broadcast is sent
+1. Roboflow `inference` SDK runs the model **locally on-device** (~30–80 ms per frame on M2) — no network call
+2. Model is downloaded once on first run and cached; subsequent starts are instant
+3. Every frame is classified: `up` / `bending` / `down`
+4. Bounding box aspect ratio is computed — standing ≈ 0.9–1.3, fallen ≈ 2–3
+5. State machine transitions: `STABLE → TRANSITION → VALIDATION → INACTIVITY → ALARM`
+6. Transitions faster than 1.2s are flagged; slow movements (intentional lying down) are ignored
+7. Alarm requires confirmed immobility (no micro-movement for 1.5s)
+8. On recovery, `ALARM → STABLE` and a recovery broadcast is sent
 
 ## Dashboard — Key Pages
 

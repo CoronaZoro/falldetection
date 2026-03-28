@@ -25,7 +25,10 @@ export default function AdminIncidentsClient() {
     if (typeFilter)   p.set("type", typeFilter);
     if (statusFilter) p.set("status", statusFilter);
     setLoading(true);
-    fetch(`/api/incidents?${p}`).then((r) => r.json()).then((d) => { setIncidents(d); setLoading(false); });
+    fetch(`/api/incidents?${p}`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((d) => { setIncidents(Array.isArray(d) ? d : []); setLoading(false); })
+      .catch(() => setLoading(false));
   }, [typeFilter, statusFilter]);
 
   function responseTime(row: IncidentRow) {

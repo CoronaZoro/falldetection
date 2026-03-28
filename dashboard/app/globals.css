@@ -114,6 +114,18 @@ body {
     opacity: 1;
   }
 }
+/* WebRTC VAD listening waveform — each bar bounces independently */
+@keyframes vad-bar {
+  0%,
+  100% {
+    height: 3px;
+    opacity: 0.4;
+  }
+  50% {
+    height: 13px;
+    opacity: 0.95;
+  }
+}
 
 .animate-pulse-red {
   animation: pulse-red 1.2s ease-in-out infinite;

@@ -57,7 +57,6 @@ async function main() {
         arThreshold:       1.5,
         transitionTime:    1.2,
         confirmSeconds:    1.5,
-        twilioEnabled:     false,
         escalationSeconds: 15,
       },
     });
