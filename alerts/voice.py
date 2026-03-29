@@ -112,17 +112,16 @@ _DEFAULT_RATE = "+15%"  # slightly faster than 1x, sounds natural for emergency 
 _MAX_HISTORY  = 20      # rolling window of messages kept in context (10 exchanges)
 
 
-# These globals are read by _voice_loop every iteration so /call/settings
-# changes take effect on the next listen/speak cycle without restarting.
+# Session globals — read each loop iteration; changes take effect next cycle
 _voice_active:             bool  = False
 _mic_muted:                bool  = False
 _current_lang:             str   = "English"
 _current_voice:            str   = _EDGE_VOICE_MAP["English"]
 _current_stt_lang:         str   = _STT_LANG_MAP["English"]
 _current_rate:             str   = _DEFAULT_RATE
-_current_speed_label:      str   = "1x"   # dashboard label — sent in voice_alert for typewriter sync
-_current_energy_threshold: int   = 300    # maps to VAD aggressiveness; see _vad_aggressiveness()
-_current_pause_threshold:  float = 1.2    # silence (seconds) after speech before sending
+_current_speed_label:      str   = "1x"
+_current_energy_threshold: int   = 300
+_current_pause_threshold:  float = 1.2
 
 
 class InterruptibleSpeaker:
@@ -159,7 +158,6 @@ class InterruptibleSpeaker:
             print(f"[Voice] TTS failed: {exc} | voice={voice!r} rate={rate!r}")
             return
 
-        # TTS file is ready — signal dashboard to show "preparing audio" state
         if on_tts_ready:
             on_tts_ready()
 
@@ -170,8 +168,7 @@ class InterruptibleSpeaker:
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
-            # Give afplay ~150 ms to buffer before broadcasting text so that
-            # audio onset and text display land on the dashboard at the same time.
+            # 150ms buffer so audio onset and text land simultaneously
             time.sleep(0.15)
             if on_play_start:
                 on_play_start()
@@ -341,8 +338,6 @@ def _voice_loop(is_authorized: bool, incident: IncidentContext | None = None) ->
     _mid    = 0
 
     def _tx(speaker: str, text: str) -> None:
-        # mid field lets the dashboard deduplicate React StrictMode double-sends
-        # speed field lets the dashboard pace the typewriter to match audio playback
         nonlocal _mid
         _mid += 1
         _broadcast({"type": "voice_alert", "speaker": speaker,

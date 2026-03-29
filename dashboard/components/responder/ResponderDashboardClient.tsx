@@ -77,6 +77,8 @@ export default function ResponderDashboardClient({
   const [selfRecovered, setSelfRecovered] = useState(false);
   // true once the 15 s escalation timer fires — recovery no longer auto-closes the incident
   const [escalated, setEscalated] = useState(false);
+  // true once the LINE broadcast confirmation arrives from the server
+  const [lineNotified, setLineNotified] = useState(false);
   // Pending resolve — set when user clicks Resolved/False Alarm, cleared on confirm/cancel
   const [pendingResolve, setPendingResolve] = useState<IncidentStatus | null>(
     null,
@@ -84,7 +86,9 @@ export default function ResponderDashboardClient({
   // Live "time on ground" counter — ticks up from 0 when alert arrives
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   // Final duration received in the recovery WS message (null while incident is active)
-  const [finalDownDuration, setFinalDownDuration] = useState<number | null>(null);
+  const [finalDownDuration, setFinalDownDuration] = useState<number | null>(
+    null,
+  );
   // Ref so onCallStart can read the live value without being recreated every second
   const totalDownRef = useRef(0);
 
@@ -127,7 +131,7 @@ export default function ResponderDashboardClient({
       });
     }, 1000);
     return () => clearInterval(interval);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeAlert?.eventId]);
 
   // Persist a log entry to DB — fire-and-forget, non-critical
@@ -190,7 +194,9 @@ export default function ResponderDashboardClient({
       if (msg.type === "mic_status") {
         const muted = msg.status === "muted";
         setMicMuted(muted);
-        setMicListening(!muted && (msg.status === "listening" || msg.status === "speaking"));
+        setMicListening(
+          !muted && (msg.status === "listening" || msg.status === "speaking"),
+        );
         setMicSpeaking(msg.status === "speaking");
         return;
       }
@@ -215,6 +221,7 @@ export default function ResponderDashboardClient({
         setPendingResolve(null);
         setSelfRecovered(false);
         setEscalated(false);
+        setLineNotified(false);
         seenEventKeys.current.clear();
         incidentIdRef.current = null;
         setStatus("UNACKNOWLEDGED");
@@ -323,6 +330,9 @@ export default function ResponderDashboardClient({
           true,
         );
       }
+      if (msg.type === "line_notified") {
+        setLineNotified(true);
+      }
       if (msg.type === "voice_tts_ready") {
         // TTS file is ready, afplay is about to start — show "preparing audio" state
         setIsThinking(false);
@@ -344,7 +354,12 @@ export default function ResponderDashboardClient({
         // ChatPanel animates the latest AI entry in-place — no callback needed.
         setTranscript((prev) => [
           ...prev.slice(-29),
-          { speaker, text: msg.message!, timestamp: msg.timestamp, speed: msg.speed },
+          {
+            speaker,
+            text: msg.message!,
+            timestamp: msg.timestamp,
+            speed: msg.speed,
+          },
         ]);
         if (speaker === "user") {
           setMicListening(false);
@@ -582,9 +597,17 @@ export default function ResponderDashboardClient({
           </div>
 
           {/* Event log — fills remaining left column height */}
-          <div className='flex-1 min-h-[120px] md:min-h-0 bg-surface border border-line rounded p-2.5 flex flex-col gap-1.5'>
-            <p className='section-label shrink-0'>Event Log</p>
-            <div className='flex-1 min-h-0'>
+          <div className='flex-1 min-h-[120px] md:min-h-0 bg-surface border border-line rounded-lg overflow-hidden flex flex-col'>
+            <div className='shrink-0 flex items-center gap-1.5 px-3 py-2 border-b border-line bg-elevated/30'>
+              <Activity size={11} className='text-fg-muted/60' />
+              <p className='section-label'>Event Log</p>
+              {eventLog.length > 0 && (
+                <span className='ml-auto font-mono text-[9px] text-fg-muted/40 bg-line/60 px-1.5 py-0.5 rounded-full'>
+                  {eventLog.length}
+                </span>
+              )}
+            </div>
+            <div className='flex-1 min-h-0 p-2'>
               <EventLog entries={eventLog} />
             </div>
           </div>
@@ -610,13 +633,17 @@ export default function ResponderDashboardClient({
           >
             <div className='p-3 max-h-[264px] overflow-y-auto'>
               {selfRecovered ? (
-                /* ── Self-recovery state: person got up before 15 s ── */
-                <div className='flex items-center gap-2.5'>
-                  <CheckCircle
-                    size={15}
-                    className='shrink-0'
-                    style={{ color: colors.success }}
-                  />
+                /* ── Self-recovery ────────────────────────────────── */
+                <div className='flex items-center gap-3 py-0.5'>
+                  <div
+                    className='w-8 h-8 rounded-full flex items-center justify-center shrink-0'
+                    style={{
+                      background: `${colors.success}18`,
+                      border: `1px solid ${colors.success}35`,
+                    }}
+                  >
+                    <CheckCircle size={15} style={{ color: colors.success }} />
+                  </div>
                   <div>
                     <p
                       className='text-xs font-semibold'
@@ -624,52 +651,83 @@ export default function ResponderDashboardClient({
                     >
                       Fall — Self Recovered
                     </p>
-                    <p className='section-label mt-0'>
-                      person got up before escalation · closing as recovered…
+                    <p className='text-[10px] text-fg-muted/70 mt-0.5'>
+                      Person got up · closing as recovered…
                     </p>
                   </div>
                 </div>
               ) : !isAlarming ? (
-                /* ── Idle state: compact single-line strip ─────────── */
-                <div className='flex items-center gap-2.5'>
-                  <CheckCircle size={15} className='text-fg-muted shrink-0' />
+                /* ── Idle ─────────────────────────────────────────── */
+                <div className='flex items-center gap-2.5 py-0.5'>
+                  <div className='w-7 h-7 rounded-full bg-line/60 flex items-center justify-center shrink-0'>
+                    <CheckCircle size={13} className='text-fg-muted/50' />
+                  </div>
                   <div>
-                    <p className='text-xs font-medium text-fg'>
+                    <p className='text-xs font-medium text-fg/80'>
                       No active alerts
                     </p>
-                    <p className='section-label mt-0'>system monitoring</p>
+                    <p className='text-[10px] text-fg-muted/50 mt-0.5'>
+                      System monitoring
+                    </p>
                   </div>
                 </div>
               ) : (
-                /* ── Alarm state ──────────────────────────────────── */
+                /* ── Alarm ────────────────────────────────────────── */
                 <div className='flex flex-col gap-3'>
-                  {/* Headline */}
-                  <div>
-                    <p
-                      className='section-label mb-0.5'
-                      style={{ color: alertColor }}
-                    >
-                      fall detected
-                    </p>
-                    <p className='text-xl font-bold text-fg leading-tight'>
-                      Person {activeAlert.personId}
-                    </p>
-                    <div className='flex items-center gap-3 mt-1'>
-                      <span className='font-mono text-[11px] text-fg-muted'>
-                        AR{" "}
-                        <span className='text-fg'>
-                          {activeAlert.ar?.toFixed(2)}
-                        </span>
-                      </span>
-                      <span className='font-mono text-[11px] text-fg-muted'>
-                        DOWN{" "}
-                        <span className='text-fg'>
-                          {finalDownDuration !== null
-                            ? `${finalDownDuration.toFixed(0)}s`
-                            : `${((activeAlert.downDuration ?? 0) + elapsedSeconds).toFixed(0)}s`}
-                        </span>
-                      </span>
+                  {/* Headline row */}
+                  <div className='flex items-start justify-between gap-2'>
+                    <div>
+                      <div className='flex items-center gap-1.5 mb-1'>
+                        <span
+                          className='w-1.5 h-1.5 rounded-full animate-pulse'
+                          style={{ background: alertColor }}
+                        />
+                        <p
+                          className='text-[10px] font-semibold uppercase tracking-widest'
+                          style={{ color: alertColor }}
+                        >
+                          Fall Detected
+                        </p>
+                      </div>
+                      <p className='text-lg font-bold text-fg leading-tight'>
+                        Person {activeAlert.personId}
+                      </p>
                     </div>
+                    {/* Down time as main metric */}
+                    <div className='text-right shrink-0'>
+                      <p
+                        className='font-mono font-bold text-2xl leading-none'
+                        style={{ color: alertColor }}
+                      >
+                        {finalDownDuration !== null
+                          ? `${finalDownDuration.toFixed(0)}`
+                          : `${((activeAlert.downDuration ?? 0) + elapsedSeconds).toFixed(0)}`}
+                        <span className='text-sm font-normal ml-0.5 opacity-60'>
+                          s
+                        </span>
+                      </p>
+                      <p className='text-[9px] text-fg-muted/60 uppercase tracking-wide mt-0.5'>
+                        Down
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Metric chips */}
+                  <div className='flex items-center gap-1.5'>
+                    <span
+                      className='font-mono text-[10px] px-2 py-0.5 rounded-full'
+                      style={{
+                        background: `${alertColor}14`,
+                        color: alertColor,
+                        border: `1px solid ${alertColor}30`,
+                      }}
+                    >
+                      AR {activeAlert.ar?.toFixed(2)}
+                    </span>
+                    <span className='text-[10px] text-fg-muted/50'>·</span>
+                    <span className='font-mono text-[10px] text-fg-muted/70'>
+                      ID #{activeAlert.personId}
+                    </span>
                   </div>
 
                   <div className='h-px bg-line' />
@@ -677,39 +735,47 @@ export default function ResponderDashboardClient({
                   {/* Unacknowledged: countdown + ACK button */}
                   {incidentStatus === "UNACKNOWLEDGED" && (
                     <>
-                      <CountdownBar
-                        seconds={15}
-                        color={alertColor}
-                        stopped={selfRecovered}
-                      />
+                      {!escalated && (
+                        <CountdownBar
+                          seconds={15}
+                          color={alertColor}
+                          stopped={selfRecovered}
+                        />
+                      )}
                       {escalated && (
                         <div
-                          className='flex items-center gap-1.5 px-2 py-1.5 rounded text-[11px] font-semibold'
+                          className='flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold'
                           style={{
-                            background: rgba(colors.danger, 0.1),
+                            background: rgba(colors.danger, 0.08),
                             color: colors.danger,
-                            border: `1px solid ${rgba(colors.danger, 0.22)}`,
+                            border: `1px solid ${rgba(colors.danger, 0.2)}`,
                           }}
                         >
-                          <Activity size={11} />
                           Active incident — responder action required
                         </div>
                       )}
+                      {lineNotified && (
+                        <div className='flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-success/8 text-success border border-success/20'>
+                          LINE alert sent to all responders
+                        </div>
+                      )}
+                      {/* Acknowledge CTA */}
                       <button
                         onClick={acknowledge}
-                        className='w-full py-2.5 rounded font-semibold text-xs border-none cursor-pointer transition-opacity hover:opacity-90 active:opacity-75'
+                        className='w-full py-2 rounded-lg font-semibold text-xs border-none cursor-pointer transition-all hover:opacity-90 active:scale-[0.98] flex items-center justify-center gap-1.5'
                         style={{ background: alertColor, color: colors.page }}
                       >
-                        Acknowledge
+                        <CheckCircle size={13} />
+                        Acknowledge Incident
                       </button>
                     </>
                   )}
 
                   {/* Post-ack status flow */}
                   {incidentStatus !== "UNACKNOWLEDGED" && (
-                    <div className='flex flex-col gap-2'>
+                    <div className='flex flex-col gap-1.5'>
                       <StatusBadge status={incidentStatus} size='sm' />
-                      <div className='flex flex-col gap-1 mt-0.5'>
+                      <div className='flex flex-col gap-1'>
                         {incidentStatus === "ACKNOWLEDGED" && (
                           <FlowBtn
                             label='Responding'
@@ -725,60 +791,53 @@ export default function ResponderDashboardClient({
                           />
                         )}
 
-                        {/* Resolve / False Alarm — show confirmation step first */}
                         {(incidentStatus === "ON_SCENE" ||
                           incidentStatus === "RESPONDING") &&
                           !pendingResolve && (
-                            <>
+                            <div className='flex gap-1.5 mt-0.5'>
                               <FlowBtn
                                 label='Resolved'
                                 color={colors.success}
                                 onClick={() => setPendingResolve("RESOLVED")}
+                                flex
                               />
                               <FlowBtn
                                 label='False Alarm'
                                 color={colors.fgMuted}
                                 onClick={() => setPendingResolve("FALSE_ALARM")}
+                                flex
                               />
-                            </>
+                            </div>
                           )}
 
                         {/* Confirmation prompt */}
                         {pendingResolve && (
                           <div
-                            className='rounded border p-2.5 flex flex-col gap-2'
+                            className='rounded-lg border p-3 flex flex-col gap-2.5'
                             style={{
                               background: rgba(
                                 pendingResolve === "RESOLVED"
                                   ? colors.success
                                   : colors.fgMuted,
-                                0.06,
+                                0.05,
                               ),
                               borderColor: rgba(
                                 pendingResolve === "RESOLVED"
                                   ? colors.success
                                   : colors.fgMuted,
-                                0.2,
+                                0.18,
                               ),
                             }}
                           >
-                            <div className='flex items-start gap-1.5'>
-                              <AlertTriangle
-                                size={11}
-                                className='text-fg-muted shrink-0 mt-0.5'
-                              />
-                              <p className='text-[11px] text-fg leading-snug'>
-                                {pendingResolve === "RESOLVED"
-                                  ? "Confirm this incident is fully resolved? This will reset the dashboard."
-                                  : "Confirm this was a false alarm? This will reset the dashboard."}
-                              </p>
-                            </div>
+                            <p className='text-[11px] text-fg leading-snug'>
+                              {pendingResolve === "RESOLVED"
+                                ? "Confirm this incident is fully resolved?"
+                                : "Confirm this was a false alarm?"}
+                            </p>
                             <div className='flex gap-1.5'>
                               <button
-                                onClick={() => {
-                                  updateStatus(pendingResolve);
-                                }}
-                                className='flex-1 py-1.5 rounded text-[11px] font-semibold cursor-pointer transition-opacity hover:opacity-90 border-none'
+                                onClick={() => updateStatus(pendingResolve)}
+                                className='flex-1 py-1.5 rounded-md text-[11px] font-semibold cursor-pointer transition-opacity hover:opacity-90 border-none'
                                 style={{
                                   background:
                                     pendingResolve === "RESOLVED"
@@ -793,7 +852,7 @@ export default function ResponderDashboardClient({
                               </button>
                               <button
                                 onClick={() => setPendingResolve(null)}
-                                className='px-3 py-1.5 rounded text-[11px] text-fg-muted border border-line bg-transparent cursor-pointer hover:text-fg transition-colors'
+                                className='px-3 py-1.5 rounded-md text-[11px] text-fg-muted border border-line bg-transparent cursor-pointer hover:text-fg transition-colors'
                               >
                                 Cancel
                               </button>
@@ -804,8 +863,9 @@ export default function ResponderDashboardClient({
                         {(incidentStatus === "RESOLVED" ||
                           incidentStatus === "RECOVERED" ||
                           incidentStatus === "FALSE_ALARM") && (
-                          <div className='flex items-center gap-1.5 text-[11px] text-success pt-1'>
-                            <CheckCircle size={12} /> Incident closed …
+                          <div className='flex items-center gap-2 px-2.5 py-2 rounded-lg bg-success/8 border border-success/20 text-[11px] text-success font-semibold mt-0.5'>
+                            <CheckCircle size={12} />
+                            Closing Incident…
                           </div>
                         )}
                       </div>
@@ -849,16 +909,21 @@ function FlowBtn({
   label,
   color,
   onClick,
+  flex = false,
 }: {
   label: string;
   color: string;
   onClick: () => void;
+  flex?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
-      className='w-full bg-transparent rounded px-3 py-1.5 text-xs font-medium cursor-pointer flex items-center justify-between transition-colors border'
-      style={{ color, borderColor: rgba(color, 0.2) }}
+      className={`${flex ? "flex-1" : "w-full"} bg-transparent rounded-lg px-3 py-2 text-[11px] font-semibold cursor-pointer flex items-center justify-between gap-2 transition-all active:scale-[0.98] border`}
+      style={{
+        color,
+        borderColor: rgba(color, 0.22),
+      }}
       onMouseEnter={(e) => {
         (e.currentTarget as HTMLButtonElement).style.background = rgba(
           color,
@@ -869,7 +934,8 @@ function FlowBtn({
         (e.currentTarget as HTMLButtonElement).style.background = "transparent";
       }}
     >
-      {label} <ChevronRight size={11} />
+      <span>{label}</span>
+      <ChevronRight size={11} style={{ opacity: 0.7 }} />
     </button>
   );
 }

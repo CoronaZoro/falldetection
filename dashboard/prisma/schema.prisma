@@ -15,6 +15,7 @@ model User {
   role         Role       @default(RESPONDER)
   isAuthorized Boolean    @default(false)
   phone        String?
+  lineId       String?    // LINE user ID (starts with "U") for push notifications
   isActive     Boolean    @default(true)
   createdAt    DateTime   @default(now())
   incidents    Incident[]
@@ -79,6 +80,7 @@ enum IncidentStatus {
 
 model SystemConfig {
   id                String   @id @default(cuid())
+  location          String   @default("Guardian Monitoring Station")
   cameraIndex       Int      @default(0)
   arThreshold       Float    @default(1.5)
   transitionTime    Float    @default(1.2)

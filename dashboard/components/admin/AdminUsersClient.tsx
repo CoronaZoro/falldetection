@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import StatusBadge from "@/components/StatusBadge";
-import { UserPlus, Pencil, Trash2, X, Check, ShieldCheck, ShieldOff } from "lucide-react";
+import { UserPlus, Pencil, Trash2, X, Check, ShieldCheck, ShieldOff, MessageCircle } from "lucide-react";
 
 interface UserRow {
   id: string; name: string; email: string;
   role: "ADMIN" | "RESPONDER"; phone: string | null;
+  lineId: string | null;
   isAuthorized: boolean; isActive: boolean; createdAt: string;
 }
 
@@ -18,7 +19,7 @@ export default function AdminUsersClient() {
   const [loading, setLoading]     = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editUser, setEditUser]   = useState<UserRow | null>(null);
-  const [form, setForm]           = useState({ name: "", email: "", password: "", role: "RESPONDER", phone: "", isAuthorized: false });
+  const [form, setForm]           = useState({ name: "", email: "", password: "", role: "RESPONDER", phone: "", lineId: "", isAuthorized: false });
   const [saving, setSaving]       = useState(false);
   const [error, setError]         = useState("");
 
@@ -33,14 +34,14 @@ export default function AdminUsersClient() {
 
   function openCreate() {
     setEditUser(null);
-    setForm({ name: "", email: "", password: "", role: "RESPONDER", phone: "", isAuthorized: false });
+    setForm({ name: "", email: "", password: "", role: "RESPONDER", phone: "", lineId: "", isAuthorized: false });
     setError("");
     setShowModal(true);
   }
 
   function openEdit(u: UserRow) {
     setEditUser(u);
-    setForm({ name: u.name, email: u.email, password: "", role: u.role, phone: u.phone ?? "", isAuthorized: u.isAuthorized });
+    setForm({ name: u.name, email: u.email, password: "", role: u.role, phone: u.phone ?? "", lineId: u.lineId ?? "", isAuthorized: u.isAuthorized });
     setError("");
     setShowModal(true);
   }
@@ -51,8 +52,8 @@ export default function AdminUsersClient() {
       const method = editUser ? "PUT" : "POST";
       const url    = editUser ? `/api/admin/users/${editUser.id}` : "/api/admin/users";
       const body   = editUser
-        ? { name: form.name, email: form.email, role: form.role, phone: form.phone || null, isAuthorized: form.isAuthorized, ...(form.password && { password: form.password }) }
-        : { name: form.name, email: form.email, password: form.password, role: form.role, phone: form.phone || null, isAuthorized: form.isAuthorized };
+        ? { name: form.name, email: form.email, role: form.role, phone: form.phone || null, lineId: form.lineId || null, isAuthorized: form.isAuthorized, ...(form.password && { password: form.password }) }
+        : { name: form.name, email: form.email, password: form.password, role: form.role, phone: form.phone || null, lineId: form.lineId || null, isAuthorized: form.isAuthorized };
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (!res.ok) { setError((await res.json()).error ?? "Failed"); return; }
       setShowModal(false); load();
@@ -95,16 +96,16 @@ export default function AdminUsersClient() {
           <table className='w-full border-collapse text-xs'>
             <thead>
               <tr className='border-b border-line'>
-                {["Name", "Email", "Role", "Access", "Status", "Joined", "Actions"].map((h) => (
+                {["Name", "Email", "Role", "Access", "LINE", "Status", "Joined", "Actions"].map((h) => (
                   <th key={h} className='py-2.5 px-3 text-left section-label sticky top-0 bg-surface z-10'>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={7} className='py-8 text-center text-fg-muted'>Loading...</td></tr>
+                <tr><td colSpan={8} className='py-8 text-center text-fg-muted'>Loading...</td></tr>
               ) : users.length === 0 ? (
-                <tr><td colSpan={7} className='py-8 text-center text-fg-muted'>No users</td></tr>
+                <tr><td colSpan={8} className='py-8 text-center text-fg-muted'>No users</td></tr>
               ) : (
                 users.map((u) => (
                   <tr key={u.id} className='border-b border-line'>
@@ -119,6 +120,15 @@ export default function AdminUsersClient() {
                         </span>
                       ) : (
                         <span className='text-[10px] text-fg-muted'>—</span>
+                      )}
+                    </td>
+                    <td className='py-2.5 px-3'>
+                      {u.lineId ? (
+                        <span className='flex items-center gap-1 text-[10px] font-semibold text-success'>
+                          <MessageCircle size={11} /> Set
+                        </span>
+                      ) : (
+                        <span className='text-[10px] text-fg-muted/50'>—</span>
                       )}
                     </td>
                     <td className='py-2.5 px-3'><StatusBadge status={u.isActive ? "ONLINE" : "OFFLINE"} /></td>
@@ -171,6 +181,19 @@ export default function AdminUsersClient() {
                 </select>
               </div>
               <div><label className={labelCls}>Phone (optional)</label><input type='tel' className={inputCls} value={form.phone} onChange={f("phone")} /></div>
+              <div>
+                <label className={labelCls}>LINE User ID (optional)</label>
+                <input
+                  type='text'
+                  className={inputCls}
+                  value={form.lineId}
+                  onChange={f("lineId")}
+                  placeholder='Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+                />
+                <p className='text-[10px] text-fg-muted/70 mt-1'>
+                  Optional — for future direct push alerts. Fall alerts currently use LINE broadcast (responders add the bot as a friend to receive alerts).
+                </p>
+              </div>
               {form.role === "RESPONDER" && (
                 <div className='flex items-center gap-2.5'>
                   <input

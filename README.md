@@ -19,6 +19,8 @@ emergency assistant (Claude), and broadcasts everything to a live multi-user web
 - **Live Voice AI assistant** — Claude-powered voice chatbot; authorized/unauthorized tiers; incident-aware context injection including live down-duration
 - **Multi-language voice** — auto-detects and responds in the responder's spoken language (English, Thai, Japanese, Chinese); language and speed changeable mid-call
 - **Incident history** — every incident's timeline, voice transcript, and AI-generated report stored and reviewable
+- **Mic mute** — responder can mute/unmute their mic mid-call; audio is still captured but discarded, not sent to STT or Claude
+- **LINE broadcast alerts** — when the 15s escalation timer fires, a LINE message is sent directly from FastAPI to all bot friends; dashboard shows "LINE alert sent" confirmation
 - **Live config sync** — detection thresholds editable from the admin settings page and applied to the running engine without restart
 - **Apple Silicon support** — runs inference on MPS (Metal Performance Shaders)
 
@@ -119,6 +121,7 @@ DETECTION_FEED_URL=http://localhost:8765/video
 NEXT_PUBLIC_DETECTION_WS_URL=ws://localhost:8765/ws
 NEXT_PUBLIC_FEED_URL=http://localhost:8765/video
 NEXT_PUBLIC_DETECTION_API_URL=http://localhost:8765
+LINE_CHANNEL_ACCESS_TOKEN=your_line_channel_access_token
 ```
 
 Also create `dashboard/.env` (for Prisma CLI commands like `db:push` / `db:seed`):
@@ -170,7 +173,7 @@ python training/train.py
 | Python → Dashboard | `escalation`   | `event_id`                                     | 15s ACK timer fired — no responder acknowledged              |
 | Python → Dashboard | `voice_alert`  | `message`, `speaker`, `mid`                    | Transcript line (dedup ID prevents double-processing)        |
 | Python → Dashboard | `call_status`  | `callStatus`                                   | Voice session started or ended                               |
-| Python → Dashboard | `mic_status`   | `status`                                       | `"listening"` (waiting) · `"speaking"` (speech detected)     |
+| Python → Dashboard | `mic_status`   | `status`                                       | `"listening"` · `"speaking"` · `"muted"`                     |
 | Dashboard → Python | `acknowledge`  | `event_id`                                     | Responder acknowledged alert                                 |
 
 **HTTP endpoints** — `http://localhost:8765`
@@ -184,8 +187,10 @@ python training/train.py
 | POST    | `/transcript`    | Push voice transcript line to all dashboards                           |
 | POST    | `/call/start`    | Start voice session (language, speed, is_authorized, incident context) |
 | POST    | `/call/stop`     | End voice session + interrupt TTS immediately                          |
-| GET     | `/call/status`   | Returns `{ "active": bool }`                                           |
+| GET     | `/call/status`   | Returns `{ "active": bool, "muted": bool }`                            |
 | POST    | `/call/settings` | Update language or speed mid-call without restarting                   |
+| POST    | `/call/mute`     | Mute mic — audio captured but discarded, not sent to STT               |
+| POST    | `/call/unmute`   | Unmute mic — resume normal STT processing                              |
 
 **GET/PUT /config** — live detection thresholds (all fields optional on PUT):
 
@@ -372,7 +377,21 @@ Toggles call `PUT /visualization` immediately; the Python loop reads flags once 
 | ------------------------ | ----------------------- | -------- | ---------------------- |
 | Admin                    | admin@guardian.com      | admin123 | Full system management |
 | Responder (Authorized)   | responder@guardian.com  | resp123  | Clinical guidance      |
-| Responder (Unauthorized) | responder2@guardian.com | resp456  | Emergency contacts     |
+| Responder (Demo)         | demo@guardian.com       | demo123  | Emergency contacts     |
+| Responder (Demo 2)       | demo2@guardian.com      | demo456  | Emergency contacts     |
+
+> Add LINE IDs to responder profiles (User Management → Edit) so they receive LINE broadcast alerts on escalation.
+
+## LINE Alert Setup
+
+1. Create a LINE Official Account at [manager.line.biz](https://manager.line.biz)
+2. In OA Manager → Settings → Messaging API → **Enable Messaging API** (links to LINE Developers)
+3. In [developers.line.biz](https://developers.line.biz) → your channel → Messaging API tab → Issue a **Channel Access Token**
+4. Add the token to `dashboard/.env.local` as `LINE_CHANNEL_ACCESS_TOKEN`
+5. Set **Use webhook → Off** in LINE Developers (broadcast doesn't need a webhook)
+6. Responders add the bot as a LINE friend — they will receive alerts when the 15s escalation timer fires
+
+The broadcast is sent directly from FastAPI (`_notify_line` in `server.py`) — Next.js is not involved.
 
 ## Dataset
 

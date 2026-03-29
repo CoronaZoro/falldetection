@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Save, Info, Cpu, Activity, CheckCircle, Zap } from "lucide-react";
+import { Save, Info, Cpu, Activity, CheckCircle, Zap, MapPin } from "lucide-react";
 import type { SystemConfig } from "@/types";
 
 const DETECTION_API = (process.env.NEXT_PUBLIC_DETECTION_WS_URL ?? "ws://localhost:8765/ws")
@@ -130,6 +130,23 @@ export default function AdminSettingsClient() {
         </div>
       ) : (
         <>
+          {/* ── Facility ───────────────────────────────────────── */}
+          <Section icon={MapPin} title='Facility'>
+            <div className='bg-page border border-line rounded p-3'>
+              <p className='text-xs font-semibold text-fg mb-0.5'>Location Name</p>
+              <p className='section-label mb-2.5 normal-case tracking-normal font-normal'>
+                Included in LINE fall alert messages sent to responders when the escalation timer fires.
+              </p>
+              <input
+                type='text'
+                value={config.location ?? ""}
+                onChange={(e) => upd("location", e.target.value)}
+                placeholder='e.g. Rangsit University — Building A, Floor 2'
+                className='w-full bg-surface border border-line rounded px-3 py-2 text-fg text-sm outline-none focus:border-info transition-colors'
+              />
+            </div>
+          </Section>
+
           {/* ── Fall Detection Thresholds ──────────────────────── */}
           <Section icon={Cpu} title='Fall Detection'>
             <Slider

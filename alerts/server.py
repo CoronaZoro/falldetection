@@ -24,6 +24,7 @@ from . import voice as _voice
 
 # ── Live runtime config ────────────────────────────────────────────────
 _config: dict = {
+    "location":          "Rangsit University, Pathum Thani, Thailand",
     "cameraIndex":       0,
     "arThreshold":       1.5,
     "transitionTime":    1.5,
@@ -126,6 +127,7 @@ async def update_visualization(body: VizFlagsModel):
 
 
 class ConfigModel(BaseModel):
+    location:          str   | None = None
     cameraIndex:       int   | None = None
     arThreshold:       float | None = None
     transitionTime:    float | None = None
@@ -176,11 +178,12 @@ def update_frame(jpeg_bytes: bytes) -> None:
 
 
 def broadcast_fall(person_id: int, ar: float, down_duration: float) -> None:
-    event_id = f"fall_{int(time.time() * 1000)}"
+    event_id  = f"fall_{int(time.time() * 1000)}"
+    fall_time = time.time()
     _broadcast({
         "type":          "fall_alert",
         "event_id":      event_id,
-        "timestamp":     time.time(),
+        "timestamp":     fall_time,
         "person_id":     person_id,
         "state":         "ALARM",
         "ar":            round(ar, 2),
@@ -189,7 +192,13 @@ def broadcast_fall(person_id: int, ar: float, down_duration: float) -> None:
     timer = threading.Timer(_config["escalationSeconds"], _escalate, args=(event_id,))
     timer.daemon = True
     timer.start()
-    pending[event_id]           = {"ts": time.time(), "timer": timer}
+    pending[event_id] = {
+        "ts":            fall_time,
+        "timer":         timer,
+        "person_id":     person_id,
+        "ar":            round(ar, 2),
+        "down_duration": down_duration,
+    }
     _person_to_event[person_id] = event_id
     print(f"[Server] fall alert sent: {event_id}")
 
@@ -277,9 +286,69 @@ def _handle_ack(event_id: str) -> None:
 
 def _escalate(event_id: str) -> None:
     if event_id in pending:
-        del pending[event_id]
+        info = pending.pop(event_id)
         _broadcast({"type": "escalation", "event_id": event_id, "timestamp": time.time()})
         print(f"[Server] no ack after {_config['escalationSeconds']}s, escalated: {event_id}")
+        _notify_line(event_id, info)
+
+
+def _notify_line(event_id: str, info: dict) -> None:
+    """Broadcast a fall escalation message to all LINE bot friends directly."""
+    import os, urllib.request
+    token = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
+    if not token:
+        print("[Server] LINE_CHANNEL_ACCESS_TOKEN not set — skipping LINE notification")
+        return
+
+    elapsed    = time.time() - info["ts"]
+    total_down = round(info.get("down_duration", 0.0) + elapsed, 1)
+    person_id  = info.get("person_id", 0)
+    ar         = info.get("ar", 0.0)
+    fall_ts    = info["ts"]
+    confidence = min(99, round(min(ar / 3, 1) * 100))
+
+    import datetime
+    fall_time = datetime.datetime.fromtimestamp(fall_ts).strftime("%H:%M:%S")
+
+    location = _config.get("location", "Guardian Monitoring Station")
+
+    message = "\n".join([
+        "🚨 FALL ALERT — Unacknowledged",
+        "",
+        "A fall was detected and no responder has confirmed within the escalation window.",
+        "",
+        f"Location: {location}",
+        f"Down Duration: {total_down:.1f}s",
+        f"Confidence: {confidence}%",
+        f"Detected At: {fall_time}",
+        "",
+        "Immediate response required. Open the Guardian dashboard to acknowledge and respond.",
+    ])
+
+    payload = json.dumps({
+        "messages": [{"type": "text", "text": message}]
+    }).encode()
+
+    try:
+        req = urllib.request.Request(
+            "https://api.line.me/v2/bot/message/broadcast",
+            data    = payload,
+            headers = {
+                "Content-Type":  "application/json",
+                "Authorization": f"Bearer {token}",
+            },
+            method = "POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            print(f"[Server] LINE broadcast sent (HTTP {resp.status}) for {event_id}")
+        # Tell the dashboard the LINE alert went out
+        _broadcast({
+            "type":      "line_notified",
+            "event_id":  event_id,
+            "timestamp": time.time(),
+        })
+    except Exception as exc:
+        print(f"[Server] LINE broadcast failed: {exc}")
 
 
 def start_server(host: str = "0.0.0.0", port: int = 8765) -> None:

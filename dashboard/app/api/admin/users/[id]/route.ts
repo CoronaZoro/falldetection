@@ -12,12 +12,13 @@ async function requireAdmin() {
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const { name, email, role, phone, isActive, isAuthorized, password } = await req.json();
+  const { name, email, role, phone, lineId, isActive, isAuthorized, password } = await req.json();
   const data: Record<string, unknown> = {};
   if (name         !== undefined) data.name         = name;
   if (email        !== undefined) data.email        = email;
   if (role         !== undefined) data.role         = role;
   if (phone        !== undefined) data.phone        = phone;
+  if (lineId       !== undefined) data.lineId       = lineId || null;
   if (isActive     !== undefined) data.isActive     = isActive;
   if (isAuthorized !== undefined) data.isAuthorized = isAuthorized;
   if (password)                   data.password     = await bcrypt.hash(password, 10);
@@ -25,7 +26,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   const user = await prisma.user.update({
     where: { id: params.id },
     data,
-    select: { id: true, name: true, email: true, role: true, isAuthorized: true, phone: true, isActive: true },
+    select: { id: true, name: true, email: true, role: true, isAuthorized: true, phone: true, lineId: true, isActive: true },
   });
   return NextResponse.json(user);
 }

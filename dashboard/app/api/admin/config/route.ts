@@ -7,14 +7,15 @@ const DETECTION_API = (process.env.NEXT_PUBLIC_DETECTION_WS_URL ?? "ws://localho
   .replace("/ws", "");
 
 const DEFAULT_CONFIG = {
-  cameraIndex: 0,
-  arThreshold: 1.5,
-  transitionTime: 1.5,
-  confirmSeconds: 1.5,
+  location:          "Guardian Monitoring Station",
+  cameraIndex:       0,
+  arThreshold:       1.5,
+  transitionTime:    1.5,
+  confirmSeconds:    1.5,
   escalationSeconds: 15,
-  fallVelThreshold: 0.30,
+  fallVelThreshold:  0.30,
   sleepVelThreshold: 0.20,
-  poseSpineFallen: 45.0,
+  poseSpineFallen:   45.0,
   recoveryLabelTime: 0.5,
   movementThreshold: 10,
 };

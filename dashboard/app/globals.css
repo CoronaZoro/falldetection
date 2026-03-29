@@ -114,17 +114,18 @@ body {
     opacity: 1;
   }
 }
-/* WebRTC VAD listening waveform — each bar bounces independently */
-@keyframes vad-bar {
-  0%,
-  100% {
-    height: 3px;
-    opacity: 0.4;
-  }
-  50% {
-    height: 13px;
-    opacity: 0.95;
-  }
+/* WebRTC VAD listening waveform — three tiers for organic, non-uniform motion */
+@keyframes vad-sm {
+  0%, 100% { height: 3px;  opacity: 0.3; }
+  50%       { height: 7px;  opacity: 0.65; }
+}
+@keyframes vad-md {
+  0%, 100% { height: 3px;  opacity: 0.4; }
+  50%       { height: 13px; opacity: 0.9; }
+}
+@keyframes vad-lg {
+  0%, 100% { height: 4px;  opacity: 0.5; }
+  50%       { height: 18px; opacity: 1; }
 }
 
 .animate-pulse-red {

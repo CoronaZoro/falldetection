@@ -16,29 +16,19 @@ import {
 } from "lucide-react";
 import type { VoiceEntry } from "@/types";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// consts
-// ─────────────────────────────────────────────────────────────────────────────
-
 const LANGUAGES = ["English", "Thai", "Japanese", "Chinese"] as const;
 type Language = (typeof LANGUAGES)[number];
 
 const SPEEDS = ["0.5x", "0.75x", "1x", "1.25x", "1.5x", "2x"] as const;
 type Speed = (typeof SPEEDS)[number];
 
-// Sensitivity → energy_threshold, which the backend maps to webrtcvad aggressiveness (0–3).
-// Higher aggressiveness = more filtering = only clear speech triggers capture.
-//   Sensitive   → threshold  100 → aggressiveness 0  (soft voices, quiet rooms)
-//   Balanced    → threshold  300 → aggressiveness 1  (normal indoor speech, default)
-//   Clear       → threshold  600 → aggressiveness 2  (clear/normal speech, some noise)
-//   Strict      → threshold 1200 → aggressiveness 3  (crisp/loud speech, noisy rooms)
 const SENSITIVITIES = ["Sensitive", "Balanced", "Clear", "Strict"] as const;
 type Sensitivity = (typeof SENSITIVITIES)[number];
 const SENSITIVITY_MAP: Record<Sensitivity, number> = {
-  Sensitive: 100, // VAD level 0 — picks up whispers; most susceptible to noise
-  Balanced: 300, // VAD level 1 — default; works for most indoor environments
-  Clear: 600, // VAD level 2 — requires clear speech; fewer false triggers
-  Strict: 1200, // VAD level 3 — noisy room / loud environment
+  Sensitive: 100,
+  Balanced: 300,
+  Clear: 600,
+  Strict: 1200,
 };
 const SENSITIVITY_HINT: Record<Sensitivity, string> = {
   Sensitive: "Soft voices · quiet room",
@@ -47,7 +37,6 @@ const SENSITIVITY_HINT: Record<Sensitivity, string> = {
   Strict: "Loud speech · noisy room",
 };
 
-// Pause-after-speech → pause_threshold (silence before phrase is sent)
 const PAUSES = ["0.5s", "0.8s", "1.2s", "1.5s", "2s", "3s"] as const;
 type Pause = (typeof PAUSES)[number];
 const PAUSE_MAP: Record<Pause, number> = {
@@ -59,14 +48,8 @@ const PAUSE_MAP: Record<Pause, number> = {
   "3s": 3.0,
 };
 
-/** Typewriter delay for user messages — faster, feels like live dictation */
 const USER_CHAR_DELAY_MS = 12;
 
-/**
- * Typewriter char delay matched to Edge TTS playback rate.
- * Values calibrated to ~130 wpm baseline at 1x, scaled per speed label.
- * Text should finish animating at roughly the same moment audio ends.
- */
 const SPEED_CHAR_DELAY_MS: Record<string, number> = {
   "0.5x": 135,
   "0.75x": 90,
@@ -77,10 +60,6 @@ const SPEED_CHAR_DELAY_MS: Record<string, number> = {
 };
 const DEFAULT_CHAR_DELAY_MS = 44;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────────────────────
-
 interface ActiveIncident {
   type: "fall";
   personId?: number;
@@ -90,7 +69,7 @@ interface ActiveIncident {
 
 interface Props {
   isAuthorized: boolean;
-  transcript: VoiceEntry[]; // all entries (user + AI), already committed
+  transcript: VoiceEntry[];
   callActive: boolean;
   onCallStart: (
     lang: Language,
@@ -108,18 +87,32 @@ interface Props {
     pauseAfter: number,
   ) => Promise<void>;
   activeIncident: ActiveIncident | null;
-  incidentUnlocked: boolean; // true once first incident fires this session
-  isThinking: boolean; // AI is generating → show "..." dots
-  isPreparingAudio: boolean; // TTS done, afplay buffering → show "starting audio" state
-  micListening: boolean; // mic is open (waiting or capturing)
-  micSpeaking: boolean; // VAD has detected speech — user is talking
-  micMuted: boolean; // mic is muted — audio captured but discarded
+  incidentUnlocked: boolean;
+  isThinking: boolean;
+  isPreparingAudio: boolean;
+  micListening: boolean;
+  micSpeaking: boolean;
+  micMuted: boolean;
   onToggleMute: () => Promise<void>;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Component
-// ─────────────────────────────────────────────────────────────────────────────
+const Chevron = () => (
+  <svg
+    className='pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 opacity-40'
+    width='10'
+    height='6'
+    viewBox='0 0 10 6'
+    fill='none'
+  >
+    <path
+      d='M1 1l4 4 4-4'
+      stroke='currentColor'
+      strokeWidth='1.2'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+    />
+  </svg>
+);
 
 export default function ChatPanel({
   isAuthorized,
@@ -141,25 +134,19 @@ export default function ChatPanel({
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Local picker state — synced from props but editable locally before confirming
   const [localLang, setLocalLang] = useState<Language>(language);
   const [localSpeed, setLocalSpeed] = useState<Speed>(speed);
   const [localSens, setLocalSens] = useState<Sensitivity>("Balanced");
   const [localPause, setLocalPause] = useState<Pause>("1.2s");
 
-  // ── In-place typewriter state ─────────────────────────────────────────────
-  // Tracks the timestamp of the entry currently being animated + how many
-  // chars have been revealed. Works for both user and assistant messages.
   const [animatingTs, setAnimatingTs] = useState<number | null>(null);
   const [displayedLen, setDisplayedLen] = useState(0);
   const animIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevLastTs = useRef<number | null>(null);
 
-  // ── Sync pickers when parent changes ─────────────────────────────────────
   useEffect(() => setLocalLang(language), [language]);
   useEffect(() => setLocalSpeed(speed), [speed]);
 
-  // ── Typewriter: animate every new message (user = fast, AI = paced) ──────
   useEffect(() => {
     const lastEntry = transcript[transcript.length - 1];
     if (!lastEntry) return;
@@ -193,13 +180,11 @@ export default function ChatPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transcript]);
 
-  // ── Auto-scroll to bottom ─────────────────────────────────────────────────
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [transcript, isThinking, isPreparingAudio, micListening, displayedLen]);
 
-  // ── Handlers ─────────────────────────────────────────────────────────────
   function handleLangChange(lang: Language) {
     setLocalLang(lang);
     onCallSettings(
@@ -242,40 +227,46 @@ export default function ChatPanel({
 
   const hasTranscript = transcript.length > 0 || isThinking || isPreparingAudio;
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Render
-  // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className='bg-surface border border-line rounded flex flex-col h-full overflow-hidden'>
       {/* ── Header ───────────────────────────────────────────────────────── */}
-      <div className='shrink-0 flex items-center justify-between px-3 py-2 border-b border-line'>
-        <div className='flex items-center gap-1.5'>
-          <Mic size={20} className='text-accent' />
-          <span className='section-label text-fg'>
-            Paladin - Emergency Assistant
+      <div className='shrink-0 flex items-center justify-between px-3 py-2 border-b border-line bg-elevated/40'>
+        <div className='flex items-center gap-2'>
+          <div className='w-6 h-6 rounded-full bg-accent/15 border border-accent/25 flex items-center justify-center'>
+            <Mic size={11} className='text-accent' />
+          </div>
+          <span className='text-[11px] font-semibold text-fg tracking-wide'>
+            Paladin
+          </span>
+          <span className='text-[10px] text-fg-muted/60'>
+            Emergency Assistant
           </span>
         </div>
-        <div className='flex items-center gap-2'>
+        <div className='flex items-center gap-1.5'>
           {callActive && (
-            <span className='flex items-center gap-1'>
+            <span className='flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-danger/10 border border-danger/20'>
               <span className='w-1.5 h-1.5 rounded-full bg-danger animate-pulse' />
-              <span className='section-label text-danger'>live</span>
+              <span className='text-[9px] font-semibold text-danger uppercase tracking-wide'>
+                live
+              </span>
             </span>
           )}
           <div
-            className={`flex items-center gap-1 px-1.5 py-0.5 rounded ${
-              isAuthorized ? "bg-success/10" : "bg-warning/10"
+            className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full ${
+              isAuthorized
+                ? "bg-success/10 border border-success/20"
+                : "bg-warning/10 border border-warning/20"
             }`}
           >
             {isAuthorized ? (
-              <ShieldCheck size={10} className='text-success' />
+              <ShieldCheck size={9} className='text-success' />
             ) : (
-              <ShieldOff size={10} className='text-warning' />
+              <ShieldOff size={9} className='text-warning' />
             )}
             <span
-              className={`section-label ${isAuthorized ? "text-success" : "text-warning"}`}
+              className={`text-[9px] font-semibold uppercase tracking-wide ${isAuthorized ? "text-success" : "text-warning"}`}
             >
-              {isAuthorized ? "authorized" : "unauthorized"}
+              {isAuthorized ? "auth" : "unauth"}
             </span>
           </div>
         </div>
@@ -283,49 +274,46 @@ export default function ChatPanel({
 
       {/* ── Body ─────────────────────────────────────────────────────────── */}
       {!incidentUnlocked ? (
-        /* ── LOCKED: no incident has fired yet ─────────────────────────── */
-        <div className='flex-1 flex flex-col items-center justify-center gap-3 px-4 text-center'>
-          <div className='w-10 h-10 rounded-full bg-line flex items-center justify-center'>
-            <Lock size={16} className='text-fg-muted' />
+        <div className='flex-1 flex flex-col items-center justify-center gap-3 px-5 text-center'>
+          <div className='w-11 h-11 rounded-full flex items-center justify-center border-1 border-line/50 bg-line/30'>
+            <Lock size={15} className='text-fg-muted/50' />
           </div>
           <div>
-            <p className='text-xs font-medium text-fg'>Waiting for emergency</p>
-            <p className='text-[10px] text-fg-muted mt-0.5'>
-              Paladin voice assistant will automatically activate when an
-              incident is detected.
+            <p className='text-xs font-semibold text-fg/70'>
+              Standby — monitoring active
+            </p>
+            <p className='text-[10px] text-fg-muted/60 mt-1 leading-relaxed'>
+              Paladin activates automatically
+              <br />
+              when an incident is detected.
             </p>
           </div>
         </div>
       ) : !callActive && !hasTranscript ? (
-        /* ── IDLE: incident unlocked, call not yet started ──────────────── */
-        <div className='flex-1 flex flex-col items-center justify-center gap-3 px-4'>
-          {/* Incident badge */}
-          {activeIncident && (
-            <div
-              className={`w-full rounded border px-3 py-2 flex flex-col gap-1 ${
-                activeIncident.type === "fall"
-                  ? "bg-danger/5 border-danger/20"
-                  : "bg-warning/5 border-warning/20"
-              }`}
-            >
-              <div className='flex items-center gap-1.5'>
-                <AlertTriangle size={11} className='text-danger shrink-0' />
-                <span className='text-[10px] font-semibold uppercase tracking-wide text-danger'>
-                  Fall detected
-                </span>
+        <div className='flex-1 flex flex-col justify-between px-3 py-3 gap-3 overflow-y-auto'>
+          {/* ── Incident context badge ── */}
+          {activeIncident ? (
+            <div className='rounded-lg px-3 py-2.5 flex items-start gap-2.5 bg-danger/[0.07] border border-danger/20'>
+              <div className='w-6 h-6 rounded-full bg-danger/15 flex items-center justify-center shrink-0 mt-0.5'>
+                <AlertTriangle size={11} className='text-danger' />
               </div>
-              {
-                <div className='flex items-center gap-3 pl-0.5'>
+              <div className='flex-1 min-w-0'>
+                <p className='text-[10px] font-semibold uppercase tracking-wider text-danger mb-1'>
+                  Active incident
+                </p>
+                <div className='flex flex-wrap gap-x-3 gap-y-0.5'>
                   {activeIncident.personId !== undefined && (
                     <span className='font-mono text-[10px] text-fg-muted'>
                       Person{" "}
-                      <span className='text-fg'>{activeIncident.personId}</span>
+                      <span className='text-fg font-semibold'>
+                        {activeIncident.personId}
+                      </span>
                     </span>
                   )}
                   {activeIncident.ar !== undefined && (
                     <span className='font-mono text-[10px] text-fg-muted'>
                       AR{" "}
-                      <span className='text-fg'>
+                      <span className='text-fg font-semibold'>
                         {activeIncident.ar.toFixed(2)}
                       </span>
                     </span>
@@ -333,153 +321,156 @@ export default function ChatPanel({
                   {activeIncident.downDuration !== undefined && (
                     <span className='font-mono text-[10px] text-fg-muted'>
                       Down{" "}
-                      <span className='text-fg'>
+                      <span className='text-fg font-semibold'>
                         {activeIncident.downDuration.toFixed(1)}s
                       </span>
                     </span>
                   )}
                 </div>
-              }
-              <p className='text-[10px] text-fg-muted pl-0.5'>
-                Bot will be briefed on this incident
-              </p>
+                <p className='text-[9px] text-fg-muted/60 mt-1'>
+                  AI will be briefed on this incident
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className='rounded-lg px-3 py-2.5 flex items-center gap-2.5 bg-success/[0.05] border border-success/15'>
+              <div className='w-6 h-6 rounded-full bg-success/10 flex items-center justify-center shrink-0'>
+                <Phone size={11} className='text-success' />
+              </div>
+              <div>
+                <p className='text-[10px] font-semibold text-fg'>
+                  Voice assistant ready
+                </p>
+                <p className='text-[9px] text-fg-muted/70 mt-0.5'>
+                  {isAuthorized
+                    ? "Clinical guidance enabled"
+                    : "Emergency contacts mode"}
+                </p>
+              </div>
             </div>
           )}
 
-          {/* Language picker */}
-          <select
-            value={localLang}
-            onChange={(e) => setLocalLang(e.target.value as Language)}
-            className='bg-page border border-line rounded px-2.5 py-1.5 text-xs text-fg outline-none focus:border-info transition-colors cursor-pointer'
-          >
-            {LANGUAGES.map((l) => (
-              <option key={l} value={l}>
-                {l}
-              </option>
-            ))}
-          </select>
-
-          {/* Speed selector */}
-          <div className='flex items-center gap-1.5 flex-wrap justify-center'>
-            {SPEEDS.map((s) => (
-              <button
-                key={s}
-                onClick={() => setLocalSpeed(s)}
-                className={`px-2 py-0.5 rounded text-[10px] font-mono border cursor-pointer transition-colors ${
-                  localSpeed === s
-                    ? "bg-accent/15 border-accent/40 text-accent"
-                    : "bg-transparent border-line text-fg-muted hover:text-fg hover:border-line-muted"
-                }`}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-
-          {/* Voice Detection (WebRTC VAD) settings */}
-          <div className='w-full border-t border-line/50 pt-2.5 flex flex-col gap-2'>
-            <div className='flex items-center justify-center gap-1.5'>
-              <p className='text-[10px] text-fg-muted uppercase tracking-wide'>
-                Voice Sensitivity
-              </p>
-              <span className='text-[9px] font-mono text-fg-muted/60 bg-line/60 px-1 py-0.5 rounded'>
-                WebRTC VAD
-              </span>
-            </div>
-
-            {/* VAD aggressiveness / sensitivity */}
-            <div className='flex flex-col gap-1'>
-              <p className='text-[10px] text-fg-muted pl-0.5'>Sensitivity</p>
-              <div className='grid grid-cols-2 gap-1'>
-                {SENSITIVITIES.map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setLocalSens(s)}
-                    className={`flex flex-col items-start px-2 py-1 rounded border cursor-pointer transition-colors ${
-                      localSens === s
-                        ? "bg-info/15 border-info/40 text-info"
-                        : "bg-transparent border-line text-fg-muted hover:text-fg hover:border-line-muted"
-                    }`}
-                  >
-                    <span className='text-[10px] font-medium'>{s}</span>
-                    <span
-                      className={`text-[9px] leading-tight ${localSens === s ? "text-info/70" : "text-fg-muted/60"}`}
-                    >
-                      {SENSITIVITY_HINT[s]}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Pause after speech — maps to VAD silence_secs */}
-            <div className='flex flex-col gap-1'>
-              <p className='text-[10px] text-fg-muted pl-0.5'>
-                Silence before send
-              </p>
-              <div className='flex items-center gap-1 flex-wrap'>
-                {PAUSES.map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => setLocalPause(p)}
-                    className={`px-2 py-0.5 rounded text-[10px] font-mono border cursor-pointer transition-colors ${
-                      localPause === p
-                        ? "bg-info/15 border-info/40 text-info"
-                        : "bg-transparent border-line text-fg-muted hover:text-fg"
-                    }`}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-              <p className='text-[9px] text-fg-muted/60 pl-0.5'>
-                Silence duration after your voice stops before sending
-              </p>
-            </div>
-          </div>
-
-          {/* Call button */}
-          <button
-            onClick={() =>
-              onCallStart(
-                localLang,
-                localSpeed,
-                SENSITIVITY_MAP[localSens],
-                PAUSE_MAP[localPause],
-              )
-            }
-            className={`relative flex items-center justify-center w-14 h-14 rounded-full cursor-pointer transition-all hover:scale-105 active:scale-95 ${
-              activeIncident
-                ? "bg-danger/15 border border-danger/30 hover:bg-danger/25"
-                : "bg-success/15 border border-success/30 hover:bg-success/25"
-            }`}
-          >
-            <span
-              className={`absolute inset-0 rounded-full animate-ping opacity-40 ${
-                activeIncident ? "bg-danger/20" : "bg-success/20"
-              }`}
-            />
-            <Phone
-              size={22}
-              className={
-                activeIncident ? "text-danger z-10" : "text-success z-10"
+          {/* ── Call button ── */}
+          <div className='flex flex-col items-center gap-2'>
+            <button
+              onClick={() =>
+                onCallStart(
+                  localLang,
+                  localSpeed,
+                  SENSITIVITY_MAP[localSens],
+                  PAUSE_MAP[localPause],
+                )
               }
-            />
-          </button>
-
-          <div className='text-center'>
-            <p className='text-xs font-medium text-fg'>
-              {activeIncident ? "Brief AI on incident" : "Start voice call"}
-            </p>
-            <p className='text-[10px] text-fg-muted mt-0.5'>
+              className={`relative flex items-center justify-center w-12 h-12 rounded-full cursor-pointer transition-all hover:scale-105 active:scale-95 ${
+                activeIncident
+                  ? "bg-danger/15 border border-danger/30 hover:bg-danger/25"
+                  : "bg-success/15 border border-success/30 hover:bg-success/25"
+              }`}
+            >
+              <span
+                className={`absolute inset-0 rounded-full animate-ping opacity-30 ${activeIncident ? "bg-danger/20" : "bg-success/20"}`}
+              />
+              <Phone
+                size={18}
+                className={
+                  activeIncident ? "text-danger z-10" : "text-success z-10"
+                }
+              />
+            </button>
+            <p className='text-[10px] text-fg-muted'>
               {activeIncident
-                ? isAuthorized
-                  ? "Clinical guidance · incident aware"
-                  : "Emergency guidance · incident aware"
-                : isAuthorized
-                  ? "Clinical guidance enabled"
-                  : "Emergency contacts mode"}
+                ? "Brief AI on incident and ask for emergency assistance"
+                : "Start voice call"}
             </p>
+          </div>
+
+          {/* ── Settings panel ── */}
+          <div className='flex flex-col gap-0 w-full mx-auto bg-page border border-line rounded-lg overflow-hidden'>
+            {/* Header */}
+
+            {/* Transcription */}
+            <div className='px-3.5 py-3 border-b border-line flex flex-col gap-1.5'>
+              <div className='flex gap-1.5'>
+                <div className='max-w-xs flex-1 flex flex-col gap-1 '>
+                  <label className='text-[10px] text-fg/60'>Language</label>
+                  <div className='relative'>
+                    <select
+                      value={localLang}
+                      onChange={(e) => setLocalLang(e.target.value as Language)}
+                      className='w-full appearance-none bg-page border border-line rounded-md pl-2 pr-6 py-1.5 text-[11px] text-fg outline-none focus:border-info transition-colors cursor-pointer'
+                    >
+                      {LANGUAGES.map((l) => (
+                        <option key={l} value={l}>
+                          {l}
+                        </option>
+                      ))}
+                    </select>
+                    <Chevron />
+                  </div>
+                </div>
+                <div className='max-w-xs flex-1 flex flex-col gap-1 '>
+                  <label className='text-[10px] text-fg/60'>Speed</label>
+                  <div className='relative'>
+                    <select
+                      value={localSpeed}
+                      onChange={(e) => setLocalSpeed(e.target.value as Speed)}
+                      className='w-full appearance-none bg-page border border-line rounded-md pl-2 pr-6 py-1.5 text-[11px] font-mono text-fg outline-none focus:border-info transition-colors cursor-pointer'
+                    >
+                      {SPEEDS.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                    <Chevron />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* VAD */}
+            <div className='px-3.5 py-3 flex flex-col gap-1.5'>
+              <div className='flex gap-1.5'>
+                <div className='flex-1 flex flex-col gap-1 max-w-xs'>
+                  <label className='text-[10px] text-fg/60'>
+                    VAD Sensitivity
+                  </label>
+                  <div className='relative'>
+                    <select
+                      value={localSens}
+                      onChange={(e) =>
+                        setLocalSens(e.target.value as Sensitivity)
+                      }
+                      className='w-full appearance-none bg-page border border-line rounded-md pl-2 pr-6 py-1.5 text-[11px] text-fg outline-none focus:border-info transition-colors cursor-pointer'
+                    >
+                      {SENSITIVITIES.map((s) => (
+                        <option key={s} value={s}>
+                          <em>{s}</em> : {SENSITIVITY_HINT[s]}
+                        </option>
+                      ))}
+                    </select>
+                    <Chevron />
+                  </div>
+                </div>
+                <div className='max-w-xs flex-1 flex flex-col gap-1 '>
+                  <label className='text-[10px] text-fg/60'>Pause</label>
+                  <div className='relative'>
+                    <select
+                      value={localPause}
+                      onChange={(e) => setLocalPause(e.target.value as Pause)}
+                      className='w-full appearance-none bg-page border border-line rounded-md pl-2 pr-6 py-1.5 text-[11px] font-mono text-fg outline-none focus:border-info transition-colors cursor-pointer'
+                    >
+                      {PAUSES.map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))}
+                    </select>
+                    <Chevron />
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       ) : (
@@ -489,62 +480,67 @@ export default function ChatPanel({
           className='flex-1 min-h-0 overflow-y-auto flex flex-col gap-1.5 px-2.5 py-2'
         >
           {transcript.map((entry, i) => {
-            // Latest entry (user or AI) gets the typewriter treatment
             const isAnimating = entry.timestamp === animatingTs;
             const text = isAnimating
               ? entry.text.slice(0, displayedLen)
               : entry.text;
+            const isUser = entry.speaker === "user";
 
             return (
               <div
                 key={i}
-                className={`flex gap-1 items-start ${entry.speaker === "user" ? "justify-end" : ""}`}
+                className={`flex gap-1.5 items-end ${isUser ? "justify-end" : ""}`}
               >
-                {entry.speaker === "assistant" && (
-                  <Bot size={11} className='text-accent shrink-0 mt-0.5' />
+                {!isUser && (
+                  <div className='w-5 h-5 rounded-full bg-accent/15 border border-accent/25 flex items-center justify-center shrink-0 mb-0.5'>
+                    <Bot size={9} className='text-accent' />
+                  </div>
                 )}
-                <p
-                  className={`text-[11px] leading-snug text-fg px-2 py-1 rounded-lg max-w-[88%] ${
-                    entry.speaker === "user"
-                      ? "bg-info/15 rounded-br-none"
-                      : "bg-accent/10 rounded-bl-none"
+                <div
+                  className={`text-[11px] leading-relaxed text-fg px-2.5 py-1.5 max-w-[85%] ${
+                    isUser
+                      ? "bg-info/15 border border-info/20 rounded-2xl rounded-br-sm"
+                      : "bg-elevated border border-line rounded-2xl rounded-bl-sm"
                   }`}
                 >
                   {text}
                   {isAnimating && (
                     <span
-                      className='inline-block w-0.5 h-3 ml-0.5 animate-pulse align-middle'
+                      className='inline-block w-[2px] h-3 ml-0.5 rounded-full animate-pulse align-middle'
                       style={{
-                        background:
-                          entry.speaker === "user"
-                            ? "var(--color-info)"
-                            : "var(--color-accent)",
+                        background: isUser
+                          ? "var(--color-info)"
+                          : "var(--color-accent)",
                       }}
                     />
                   )}
-                </p>
-                {entry.speaker === "user" && (
-                  <User size={11} className='text-info shrink-0 mt-0.5' />
+                </div>
+                {isUser && (
+                  <div className='w-5 h-5 rounded-full bg-info/15 border border-info/25 flex items-center justify-center shrink-0 mb-0.5'>
+                    <User size={9} className='text-info' />
+                  </div>
                 )}
               </div>
             );
           })}
 
-          {/* Thinking dots — shown while AI is generating */}
           {isThinking && (
-            <div className='flex gap-1 items-start'>
-              <Bot size={11} className='text-accent shrink-0 mt-0.5' />
-              <div className='bg-accent/10 rounded-lg rounded-bl-none px-3 py-2'>
+            <div className='flex gap-1.5 items-end'>
+              <div className='w-5 h-5 rounded-full bg-accent/15 border border-accent/25 flex items-center justify-center shrink-0'>
+                <Bot size={9} className='text-accent' />
+              </div>
+              <div className='bg-elevated border border-line rounded-2xl rounded-bl-sm px-3 py-2'>
                 <ThinkingDots />
               </div>
             </div>
           )}
 
-          {/* Preparing audio — TTS done, afplay buffering, text about to appear */}
           {isPreparingAudio && !isThinking && (
-            <div className='flex gap-1 items-start'>
-              <Bot size={11} className='text-accent shrink-0 mt-0.5' />
-              <div className='bg-accent/10 rounded-lg rounded-bl-none px-3 py-2 flex items-center gap-1.5'>
+            <div className='flex gap-1.5 items-end'>
+              <div className='w-5 h-5 rounded-full bg-accent/15 border border-accent/25 flex items-center justify-center shrink-0'>
+                <Bot size={9} className='text-accent' />
+              </div>
+              <div className='bg-elevated border border-line rounded-2xl rounded-bl-sm px-2.5 py-1.5 flex items-center gap-1.5'>
                 <Volume2 size={10} className='text-accent animate-pulse' />
                 <span className='text-[10px] text-accent/80 italic'>
                   starting audio…
@@ -553,18 +549,17 @@ export default function ChatPanel({
             </div>
           )}
 
-          {/* Mic indicator — static dot while waiting, waveform only when speech is detected */}
           {micListening && !isThinking && (
-            <div className='flex gap-2 items-center justify-end'>
+            <div className='flex gap-1.5 items-center justify-end py-0.5'>
               {micSpeaking ? (
                 <ListeningWaveform />
               ) : (
-                <>
-                  <span className='text-[10px] text-fg-muted/60 italic'>
+                <div className='flex items-center gap-1.5 px-2 py-1 rounded-full bg-page border border-line/60'>
+                  <span className='w-1.5 h-1.5 rounded-full bg-danger/60 animate-pulse' />
+                  <span className='text-[9px] text-fg-muted/70 italic'>
                     listening…
                   </span>
-                  <span className='w-1.5 h-1.5 rounded-full bg-fg-muted/40 animate-pulse' />
-                </>
+                </div>
               )}
             </div>
           )}
@@ -573,28 +568,166 @@ export default function ChatPanel({
 
       {/* ── Bottom bar ───────────────────────────────────────────────────── */}
       {incidentUnlocked && (
-        <div className='shrink-0 border-t border-line px-3 py-2'>
+        <div className='shrink-0 border-t border-line px-3 py-1 bg-page'>
           {callActive ? (
             /* ── Active call controls ──────────────────────────────────── */
-            <div className='flex flex-col gap-1.5'>
-              {/* Row 1: mic indicator + language + speed + end */}
-              <div className='flex items-center justify-between gap-2'>
-                <div className='flex items-center gap-1.5'>
-                  <div className='relative w-7 h-7 flex items-center justify-center'>
-                    {!micMuted && <span className='absolute inset-0 rounded-full bg-danger/10 animate-ping' />}
-                    {micMuted
-                      ? <MicOff size={13} className='text-warning z-10' />
-                      : <Mic size={13} className='text-danger z-10' />
-                    }
+            <div className='flex flex-col gap-2 px-3 py-3.5'>
+              {/* Row 1: mic status + mute + end */}
+              <div className='flex items-center gap-1.5'>
+                {/* Mic status pill */}
+                <div
+                  className={`flex items-center gap-1 px-2 py-1 rounded-full mt-3 border ${
+                    micMuted
+                      ? "bg-warning/10 border-warning/25"
+                      : "bg-danger/8 border-danger/20"
+                  }`}
+                >
+                  <div className='relative flex items-center justify-center w-3 h-3'>
+                    {!micMuted && (
+                      <span className='absolute inset-0 rounded-full bg-danger/30 animate-ping' />
+                    )}
+                    {micMuted ? (
+                      <MicOff size={9} className='text-warning' />
+                    ) : (
+                      <Mic size={9} className='text-danger z-10' />
+                    )}
                   </div>
-                  <span className='text-[10px] text-fg-muted'>
-                    {micMuted ? "Muted" : "Listening…"}
+                  <span
+                    className={`text-[9px] font-medium ${micMuted ? "text-warning" : "text-danger"}`}
+                  >
+                    {micMuted ? "Muted" : "Live"}
                   </span>
                 </div>
+
+                <div className='flex gap-3 items-center w-full max-w-sm justify-evenly mx-auto'>
+                  <div className='max-w-xs flex flex-col gap-0.5'>
+                    <label className='text-[9px] text-fg/40 pl-0.5'>
+                      Language
+                    </label>
+                    <div className='flex max-w-xs relative'>
+                      <select
+                        value={localLang}
+                        onChange={(e) =>
+                          handleLangChange(e.target.value as Language)
+                        }
+                        className='w-full appearance-none bg-page border border-line rounded-md pl-2 pr-6 py-1 text-[10px] text-fg outline-none focus:border-info transition-colors cursor-pointer'
+                      >
+                        {LANGUAGES.map((l) => (
+                          <option key={l} value={l}>
+                            {l}
+                          </option>
+                        ))}
+                      </select>
+                      <Chevron />
+                    </div>
+                  </div>
+
+                  <div className=' max-w-xs shrink-0 flex flex-col gap-0.5'>
+                    <label className='text-[9px] text-fg/40 pl-0.5'>
+                      Speed
+                    </label>
+                    <div className='flex max-w-xs relative'>
+                      <select
+                        value={localSpeed}
+                        onChange={(e) =>
+                          handleSpeedChange(e.target.value as Speed)
+                        }
+                        className='w-full appearance-none bg-page border border-line rounded-md pl-2 pr-6 py-1 text-[10px] font-mono text-fg outline-none focus:border-info transition-colors cursor-pointer'
+                      >
+                        {SPEEDS.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                      <Chevron />
+                    </div>
+                  </div>
+
+                  <div className=' max-w-xs shrink-0 flex flex-col gap-0.5'>
+                    <label className='text-[9px] text-fg/40 pl-0.5'>
+                      Sensitivity
+                    </label>
+                    <div className='flex max-w-xs relative'>
+                      <select
+                        value={localSens}
+                        onChange={(e) =>
+                          handleSensChange(e.target.value as Sensitivity)
+                        }
+                        className='w-full appearance-none bg-page border border-line rounded-md pl-2 pr-6 py-1 text-[10px] text-fg outline-none focus:border-info transition-colors cursor-pointer'
+                      >
+                        {SENSITIVITIES.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                      <Chevron />
+                    </div>
+                  </div>
+
+                  <div className=' max-w-xs shrink-0 flex flex-col gap-0.5'>
+                    <label className='text-[9px] text-fg/40 pl-0.5'>
+                      Pause
+                    </label>
+                    <div className='flex max-w-xs relative'>
+                      <select
+                        value={localPause}
+                        onChange={(e) =>
+                          handlePauseChange(e.target.value as Pause)
+                        }
+                        className='w-full appearance-none bg-page border border-line rounded-md pl-2 pr-6 py-1 text-[10px] font-mono text-fg outline-none focus:border-info transition-colors cursor-pointer'
+                      >
+                        {PAUSES.map((p) => (
+                          <option key={p} value={p}>
+                            {p}
+                          </option>
+                        ))}
+                      </select>
+                      <Chevron />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Mute toggle */}
+                <button
+                  onClick={onToggleMute}
+                  title={micMuted ? "Unmute" : "Mute"}
+                  className={`w-7 h-7 flex items-center justify-center rounded-full border cursor-pointer mt-3  transition-all active:scale-95 ${
+                    micMuted
+                      ? "bg-warning/15 border-warning/35 hover:bg-warning/25"
+                      : "bg-fg/10 border-fg/35 hover:bg-fg/25"
+                  }`}
+                >
+                  {micMuted ? (
+                    <MicOff size={10} className='text-warning' />
+                  ) : (
+                    <Mic size={10} className='text-fg' />
+                  )}
+                </button>
+
+                {/* End call */}
+                <button
+                  onClick={onCallStop}
+                  className='flex items-center gap-1 bg-danger/12 hover:bg-danger/22 border border-danger/30 rounded-full px-2.5 py-1.5 mt-3 cursor-pointer transition-all active:scale-95'
+                >
+                  <PhoneOff size={10} className='text-danger' />
+                  <span className='text-[10px] font-semibold text-danger'>
+                    End
+                  </span>
+                </button>
+              </div>
+
+              {/* Row 2: language + speed + sensitivity + pause */}
+            </div>
+          ) : hasTranscript ? (
+            /* ── Idle with history: restart row ────────────────────────── */
+            <div className='flex items-center gap-1.5'>
+              <div className='relative flex-1'>
                 <select
                   value={localLang}
-                  onChange={(e) => handleLangChange(e.target.value as Language)}
-                  className='bg-page border border-line rounded px-1.5 py-1 text-[10px] text-fg outline-none focus:border-info transition-colors cursor-pointer'
+                  onChange={(e) => setLocalLang(e.target.value as Language)}
+                  className='w-full appearance-none bg-page border border-line rounded-md pl-2 pr-6 py-1.5 text-[10px] text-fg outline-none focus:border-info transition-colors cursor-pointer'
                 >
                   {LANGUAGES.map((l) => (
                     <option key={l} value={l}>
@@ -602,10 +735,13 @@ export default function ChatPanel({
                     </option>
                   ))}
                 </select>
+                <Chevron />
+              </div>
+              <div className='relative w-[80px] shrink-0'>
                 <select
                   value={localSpeed}
-                  onChange={(e) => handleSpeedChange(e.target.value as Speed)}
-                  className='bg-page border border-line rounded px-1.5 py-1 text-[10px] font-mono text-fg outline-none focus:border-info transition-colors cursor-pointer'
+                  onChange={(e) => setLocalSpeed(e.target.value as Speed)}
+                  className='w-full appearance-none bg-page border border-line rounded-md pl-2 pr-6 py-1.5 text-[10px] font-mono text-fg outline-none focus:border-info transition-colors cursor-pointer'
                 >
                   {SPEEDS.map((s) => (
                     <option key={s} value={s}>
@@ -613,87 +749,8 @@ export default function ChatPanel({
                     </option>
                   ))}
                 </select>
-                <button
-                  onClick={onToggleMute}
-                  className={`flex items-center gap-1 border rounded-full px-2.5 py-1.5 cursor-pointer transition-all active:scale-95 ${
-                    micMuted
-                      ? "bg-warning/20 hover:bg-warning/30 border-warning/40"
-                      : "bg-fg-muted/10 hover:bg-fg-muted/20 border-line"
-                  }`}
-                  title={micMuted ? "Unmute mic" : "Mute mic"}
-                >
-                  {micMuted ? (
-                    <MicOff size={11} className='text-warning' />
-                  ) : (
-                    <Mic size={11} className='text-fg-muted' />
-                  )}
-                </button>
-                <button
-                  onClick={onCallStop}
-                  className='flex items-center gap-1 bg-danger/15 hover:bg-danger/25 border border-danger/30 rounded-full px-2.5 py-1.5 cursor-pointer transition-all active:scale-95'
-                >
-                  <PhoneOff size={11} className='text-danger' />
-                  <span className='text-[10px] font-semibold text-danger'>
-                    End
-                  </span>
-                </button>
+                <Chevron />
               </div>
-              {/* Row 2: VAD sensitivity + silence threshold */}
-              <div className='flex items-center gap-1.5'>
-                <span className='text-[9px] font-mono text-fg-muted/60 shrink-0 bg-line/60 px-1 py-0.5 rounded'>
-                  VAD
-                </span>
-                <select
-                  value={localSens}
-                  onChange={(e) =>
-                    handleSensChange(e.target.value as Sensitivity)
-                  }
-                  className='bg-page border border-line rounded px-1.5 py-1 text-[10px] text-fg outline-none focus:border-info transition-colors cursor-pointer flex-1'
-                >
-                  {SENSITIVITIES.map((s) => (
-                    <option key={s} value={s}>
-                      {s} — {SENSITIVITY_HINT[s]}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={localPause}
-                  onChange={(e) => handlePauseChange(e.target.value as Pause)}
-                  className='bg-page border border-line rounded px-1.5 py-1 text-[10px] font-mono text-fg outline-none focus:border-info transition-colors cursor-pointer'
-                >
-                  {PAUSES.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          ) : hasTranscript ? (
-            /* ── Idle with history: compact restart row ────────────────── */
-            <div className='flex items-center justify-between gap-2'>
-              <select
-                value={localLang}
-                onChange={(e) => setLocalLang(e.target.value as Language)}
-                className='bg-page border border-line rounded px-2 py-1 text-[10px] text-fg outline-none focus:border-info transition-colors cursor-pointer'
-              >
-                {LANGUAGES.map((l) => (
-                  <option key={l} value={l}>
-                    {l}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={localSpeed}
-                onChange={(e) => setLocalSpeed(e.target.value as Speed)}
-                className='bg-page border border-line rounded px-2 py-1 text-[10px] font-mono text-fg outline-none focus:border-info transition-colors cursor-pointer'
-              >
-                {SPEEDS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
               <button
                 onClick={() =>
                   onCallStart(
@@ -703,9 +760,9 @@ export default function ChatPanel({
                     PAUSE_MAP[localPause],
                   )
                 }
-                className='flex items-center gap-1.5 bg-success/15 hover:bg-success/25 border border-success/30 rounded-full px-3 py-1.5 cursor-pointer transition-all active:scale-95'
+                className='flex items-center gap-1.5 bg-success/12 hover:bg-success/22 border border-success/30 rounded-full px-3 py-1.5 cursor-pointer transition-all active:scale-95'
               >
-                <Phone size={11} className='text-success' />
+                <Phone size={10} className='text-success' />
                 <span className='text-[10px] font-semibold text-success'>
                   New Call
                 </span>
@@ -714,11 +771,11 @@ export default function ChatPanel({
           ) : (
             /* ── Idle, no history ──────────────────────────────────────── */
             <div className='flex items-center gap-1.5'>
-              <MicOff size={10} className='text-fg-muted' />
-              <span className='text-[10px] text-fg-muted'>
+              <MicOff size={10} className='text-fg-muted/50' />
+              <span className='text-[10px] text-fg-muted/60'>
                 {isAuthorized
-                  ? "Voice only · clinical guidance"
-                  : "Voice only · emergency contacts"}
+                  ? "Clinical guidance ready"
+                  : "Emergency contacts ready"}
               </span>
             </div>
           )}
@@ -728,9 +785,8 @@ export default function ChatPanel({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ThinkingDots — animated "..." while AI is generating a reply
-// ─────────────────────────────────────────────────────────────────────────────
+// ThinkingDots
+
 function ThinkingDots() {
   return (
     <span className='flex items-center gap-1 h-3'>
@@ -748,34 +804,33 @@ function ThinkingDots() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ListeningWaveform — animated audio-bar visualiser shown while WebRTC VAD
-// is actively monitoring the microphone between AI turns.
-//
-// 7 bars with staggered vad-bar keyframe delays produce an equaliser-style
-// animation that communicates "mic is open and processing audio frames"
-// without requiring any real audio level data from the backend.
-// ─────────────────────────────────────────────────────────────────────────────
+// ListeningWaveform
+
 function ListeningWaveform() {
-  // Stagger amounts chosen so bars reach their peak height at different times,
-  // giving the impression of a live audio signal rather than a synchronized pulse.
-  const delays = [0, 0.13, 0.26, 0.1, 0.22, 0.05, 0.18];
+  const bars: { anim: string; dur: number; delay: number }[] = [
+    { anim: "vad-sm", dur: 0.9, delay: 0.0 },
+    { anim: "vad-md", dur: 0.75, delay: 0.18 },
+    { anim: "vad-md", dur: 1.05, delay: 0.07 },
+    { anim: "vad-lg", dur: 0.8, delay: 0.28 },
+    { anim: "vad-md", dur: 0.95, delay: 0.12 },
+    { anim: "vad-md", dur: 0.68, delay: 0.35 },
+    { anim: "vad-sm", dur: 1.1, delay: 0.05 },
+  ];
 
   return (
     <div
-      className='flex items-end gap-[2.5px]'
-      style={{ height: 14 }}
+      className='flex items-end gap-[3px]'
+      style={{ height: 20 }}
       aria-label='Listening'
     >
-      {delays.map((delay, i) => (
+      {bars.map((b, i) => (
         <span
           key={i}
-          className='w-[2.5px] rounded-full bg-danger/75'
+          className='w-[2.5px] rounded-full bg-danger/70'
           style={{
-            animation: "vad-bar 0.85s ease-in-out infinite",
-            animationDelay: `${delay}s`,
-            // Starting height ensures bars are visible before animation kicks in
-            height: 4,
+            animation: `${b.anim} ${b.dur}s ease-in-out infinite`,
+            animationDelay: `${b.delay}s`,
+            height: 3,
           }}
         />
       ))}

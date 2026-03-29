@@ -10,7 +10,7 @@ export type IncidentStatus =
   | "FALSE_ALARM";
 
 export interface WSMessage {
-  type: "heartbeat" | "state_update" | "fall_alert" | "recovery" | "escalation" | "voice_alert" | "voice_tts_ready" | "call_status" | "mic_status";
+  type: "heartbeat" | "state_update" | "fall_alert" | "recovery" | "escalation" | "line_notified" | "voice_alert" | "voice_tts_ready" | "call_status" | "mic_status";
   timestamp: number;
   event_id?: string;
   person_id?: number;
@@ -68,6 +68,7 @@ export interface User {
 
 export interface SystemConfig {
   id: string;
+  location: string;
   cameraIndex: number;
   arThreshold: number;
   transitionTime: number;
