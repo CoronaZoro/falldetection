@@ -201,7 +201,7 @@ while True:
             cv2.putText(frame, "FALL DETECTED",
                         (20, 48), cv2.FONT_HERSHEY_SIMPLEX, 1.4, (255, 255, 255), 3)
         elif current_state == SLEEPING:
-            cv2.putText(frame, "SLEEPING",
+            cv2.putText(frame, "STATUS: SLEEPING",
                         (20, 48), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 2)
         else:
             cv2.putText(frame, f"STATUS: {current_state}",

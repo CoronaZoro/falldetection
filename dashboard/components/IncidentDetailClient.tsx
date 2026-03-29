@@ -152,17 +152,17 @@ export default function IncidentDetailClient({ id, role }: Props) {
   ];
 
   return (
-    <div className='flex flex-col gap-4 max-w-[720px] max-h-full pb-8 mx-auto'>
+    <div className='h-full flex flex-col gap-3 max-w-[720px] mx-auto overflow-hidden'>
       {/* Back */}
       <button
         onClick={() => router.push(backPath)}
-        className='flex items-center gap-1.5 bg-transparent border-none text-fg-muted hover:text-fg cursor-pointer text-sm p-0 transition-colors w-fit'
+        className='shrink-0 flex items-center gap-1.5 bg-transparent border-none text-fg-muted hover:text-fg cursor-pointer text-sm p-0 transition-colors w-fit'
       >
         <ArrowLeft size={14} /> Back to incidents
       </button>
 
       {/* Header */}
-      <div>
+      <div className='shrink-0'>
         <div className='flex items-center gap-2 mb-1'>
           <h1 className='text-base font-semibold text-fg'>Incident Detail</h1>
           <StatusBadge status={incident.type} size='sm' />
@@ -172,9 +172,9 @@ export default function IncidentDetailClient({ id, role }: Props) {
       </div>
 
       {/* Data grid */}
-      <div className='bg-surface border border-line rounded p-4'>
-        <p className='section-label mb-3'>Incident Data</p>
-        <div className='grid grid-cols-2 sm:grid-cols-3 gap-3'>
+      <div className='shrink-0 bg-surface border border-line rounded p-3'>
+        <p className='section-label mb-2'>Incident Data</p>
+        <div className='grid grid-cols-2 sm:grid-cols-3 gap-2.5'>
           {[
             ["Person ID", `#${incident.personId}`],
             ["Aspect Ratio", incident.ar.toFixed(2)],
@@ -201,14 +201,14 @@ export default function IncidentDetailClient({ id, role }: Props) {
       </div>
 
       {/* Notes */}
-      <div className='bg-surface border border-line rounded p-4'>
-        <p className='section-label mb-3'>Notes</p>
+      <div className='shrink-0 bg-surface border border-line rounded p-3'>
+        <p className='section-label mb-2'>Notes</p>
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           placeholder='Add notes about this incident...'
-          rows={3}
-          className='w-full bg-page border border-line rounded px-3 py-2 text-fg text-xs outline-none focus:border-info resize-y transition-colors'
+          rows={2}
+          className='w-full bg-page border border-line rounded px-3 py-2 text-fg text-xs outline-none focus:border-info resize-none transition-colors'
         />
         <button
           onClick={saveNotes}
@@ -218,10 +218,10 @@ export default function IncidentDetailClient({ id, role }: Props) {
         </button>
       </div>
 
-      {/* Tabs: Timeline / Transcript / Report */}
-      <div className='bg-surface border border-line rounded overflow-hidden'>
+      {/* Tabs: Timeline / Transcript / Report — fills remaining height */}
+      <div className='flex-1 min-h-0 bg-surface border border-line rounded overflow-hidden flex flex-col'>
         {/* Tab bar */}
-        <div className='flex border-b border-line'>
+        <div className='shrink-0 flex border-b border-line'>
           {TABS.map((t) => (
             <button
               key={t.key}
@@ -244,8 +244,8 @@ export default function IncidentDetailClient({ id, role }: Props) {
           ))}
         </div>
 
-        {/* Tab content */}
-        <div className='p-4 max-h-[400px] overflow-y-auto'>
+        {/* Tab content — scrollable */}
+        <div className='flex-1 min-h-0 overflow-y-auto p-4'>
           {/* ── Timeline ── */}
           {tab === "timeline" &&
             (incident.logs.length === 0 ? (

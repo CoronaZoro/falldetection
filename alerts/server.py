@@ -250,6 +250,25 @@ class TranscriptPayload(BaseModel):
     text: str
 
 
+class DebugFallPayload(BaseModel):
+    person_id: int = 0
+    ar: float = 0.35
+    down_duration: float = 3.0
+
+
+@app.post("/debug/fall")
+async def debug_fall(payload: DebugFallPayload):
+    """Manually trigger a fall alert (for testing)."""
+    broadcast_fall(payload.person_id, payload.ar, payload.down_duration)
+    return {"ok": True, "person_id": payload.person_id, "ar": payload.ar, "down_duration": payload.down_duration}
+
+
+@app.post("/debug/recovery")
+async def debug_recovery(payload: DebugFallPayload):
+    """Manually trigger a recovery event (for testing)."""
+    broadcast_recovery(payload.person_id, payload.down_duration)
+    return {"ok": True, "person_id": payload.person_id, "down_duration": payload.down_duration}
+
 @app.post("/transcript")
 async def post_transcript(payload: TranscriptPayload):
     """Push a transcript line from an external voice script to the dashboard."""

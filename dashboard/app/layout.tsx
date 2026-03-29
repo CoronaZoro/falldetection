@@ -3,7 +3,7 @@ import "./globals.css";
 import Providers from "./providers";
 
 export const metadata: Metadata = {
-  title: "GUARDIAN — Fall Detection System",
+  title: "GUARDIAN - Health Monitoring System",
   description: "Real-time AI fall detection and emergency alert system",
 };
 
@@ -26,7 +26,9 @@ export default function RootLayout({
           rel='stylesheet'
         />
       </head>
-      <body className='h-full'><Providers>{children}</Providers></body>
+      <body className='h-full'>
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

@@ -273,6 +273,7 @@ export default function ResponderDashboardClient({
             msg.timestamp,
           );
           setSelfRecovered(true);
+          incidentEverFired.current = false; // self-recovery — chatbot stays locked
           setSystemState("STABLE");
           setStatus("RECOVERED");
           // Freeze the counter at the authoritative server-reported final duration
@@ -617,7 +618,7 @@ export default function ResponderDashboardClient({
         <div className='flex flex-col gap-2 min-h-0 order-1 md:order-2'>
           {/* Alert card — compact idle, grows on alarm, capped at ~264px */}
           <div
-            className='shrink-0 rounded border overflow-hidden transition-colors duration-300'
+            className='shrink-0 min-h-[300px] rounded border overflow-hidden transition-colors duration-300'
             style={{
               background: selfRecovered
                 ? rgba(colors.success, 0.05)
@@ -631,38 +632,29 @@ export default function ResponderDashboardClient({
                   : colors.line,
             }}
           >
-            <div className='p-3 max-h-[264px] overflow-y-auto'>
+            <div className='p-3 max-h-full overflow-y-auto my-auto'>
               {selfRecovered ? (
                 /* ── Self-recovery ────────────────────────────────── */
-                <div className='flex items-center gap-3 py-0.5'>
-                  <div
-                    className='w-8 h-8 rounded-full flex items-center justify-center shrink-0'
-                    style={{
-                      background: `${colors.success}18`,
-                      border: `1px solid ${colors.success}35`,
-                    }}
-                  >
-                    <CheckCircle size={15} style={{ color: colors.success }} />
-                  </div>
-                  <div>
-                    <p
-                      className='text-xs font-semibold'
-                      style={{ color: colors.success }}
-                    >
-                      Fall — Self Recovered
+                <div className='flex items-center justify-center my-auto min-h-[300px] bg-page'>
+                  <div className='flex flex-col items-center gap-1.5 h-full'>
+                    <div className='w-7 h-7 rounded-full bg-line/60 flex items-center justify-center shrink-0'>
+                      <CheckCircle size={13} className='text-fg-success' />
+                    </div>
+                    <p className='text-xs font-medium text-success'>
+                      Fall : Self Recovered
                     </p>
-                    <p className='text-[10px] text-fg-muted/70 mt-0.5'>
-                      Person got up · closing as recovered…
+                    <p className='text-[10px] text-success/80 mt-0.5'>
+                      Person got up and recovery was detected.
                     </p>
                   </div>
                 </div>
               ) : !isAlarming ? (
                 /* ── Idle ─────────────────────────────────────────── */
-                <div className='flex items-center gap-2.5 py-0.5'>
-                  <div className='w-7 h-7 rounded-full bg-line/60 flex items-center justify-center shrink-0'>
-                    <CheckCircle size={13} className='text-fg-muted/50' />
-                  </div>
-                  <div>
+                <div className='flex items-center justify-center my-auto min-h-[300px] bg-page'>
+                  <div className='flex flex-col items-center gap-1.5 h-full'>
+                    <div className='w-7 h-7 rounded-full bg-line/60 flex items-center justify-center shrink-0'>
+                      <CheckCircle size={13} className='text-fg-muted/50' />
+                    </div>
                     <p className='text-xs font-medium text-fg/80'>
                       No active alerts
                     </p>

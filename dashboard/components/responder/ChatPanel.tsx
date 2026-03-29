@@ -98,7 +98,7 @@ interface Props {
 
 const Chevron = () => (
   <svg
-    className='pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 opacity-40'
+    className='pointer-events-none absolute right-3 top-4/7 -translate-y-1/2 opacity-60'
     width='10'
     height='6'
     viewBox='0 0 10 6'
@@ -231,20 +231,21 @@ export default function ChatPanel({
     <div className='bg-surface border border-line rounded flex flex-col h-full overflow-hidden'>
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <div className='shrink-0 flex items-center justify-between px-3 py-2 border-b border-line bg-elevated/40'>
-        <div className='flex items-center gap-2'>
+        <div className='flex items-center gap-3 py-1 rounded-md'>
           <div className='w-6 h-6 rounded-full bg-accent/15 border border-accent/25 flex items-center justify-center'>
-            <Mic size={11} className='text-accent' />
+            <Bot size={16} className='text-accent' />
           </div>
-          <span className='text-[11px] font-semibold text-fg tracking-wide'>
+          <span className='text-[16px] font-semibold text-fg/70 tracking-wide uppercase'>
             Paladin
-          </span>
-          <span className='text-[10px] text-fg-muted/60'>
-            Emergency Assistant
+            <br />
+            <span className='text-[10px] font-light text-fg-muted/70 tracking-wide uppercase'>
+              Emergency Assistant
+            </span>
           </span>
         </div>
         <div className='flex items-center gap-1.5'>
           {callActive && (
-            <span className='flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-danger/10 border border-danger/20'>
+            <span className='flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-danger/10 border border-danger/20 hidden'>
               <span className='w-1.5 h-1.5 rounded-full bg-danger animate-pulse' />
               <span className='text-[9px] font-semibold text-danger uppercase tracking-wide'>
                 live
@@ -266,7 +267,7 @@ export default function ChatPanel({
             <span
               className={`text-[9px] font-semibold uppercase tracking-wide ${isAuthorized ? "text-success" : "text-warning"}`}
             >
-              {isAuthorized ? "auth" : "unauth"}
+              {isAuthorized ? "authorized personnel" : "unauthorized personnel"}
             </span>
           </div>
         </div>
@@ -274,13 +275,13 @@ export default function ChatPanel({
 
       {/* ── Body ─────────────────────────────────────────────────────────── */}
       {!incidentUnlocked ? (
-        <div className='flex-1 flex flex-col items-center justify-center gap-3 px-5 text-center'>
+        <div className='flex-1 flex flex-col items-center justify-center gap-3 px-5 text-center bg-page'>
           <div className='w-11 h-11 rounded-full flex items-center justify-center border-1 border-line/50 bg-line/30'>
             <Lock size={15} className='text-fg-muted/50' />
           </div>
           <div>
             <p className='text-xs font-semibold text-fg/70'>
-              Standby — monitoring active
+              Standby : Actively Monitoring
             </p>
             <p className='text-[10px] text-fg-muted/60 mt-1 leading-relaxed'>
               Paladin activates automatically
@@ -290,7 +291,7 @@ export default function ChatPanel({
           </div>
         </div>
       ) : !callActive && !hasTranscript ? (
-        <div className='flex-1 flex flex-col justify-between px-3 py-3 gap-3 overflow-y-auto'>
+        <div className='flex-1 flex flex-col justify-between px-3 py-3 gap-3 overflow-y-auto bg-page'>
           {/* ── Incident context badge ── */}
           {activeIncident ? (
             <div className='rounded-lg px-3 py-2.5 flex items-start gap-2.5 bg-danger/[0.07] border border-danger/20'>
@@ -328,7 +329,8 @@ export default function ChatPanel({
                   )}
                 </div>
                 <p className='text-[9px] text-fg-muted/60 mt-1'>
-                  AI will be briefed on this incident
+                  PALADIN is aware of the incident and will provide real-time
+                  assistance.
                 </p>
               </div>
             </div>
@@ -385,19 +387,21 @@ export default function ChatPanel({
           </div>
 
           {/* ── Settings panel ── */}
-          <div className='flex flex-col gap-0 w-full mx-auto bg-page border border-line rounded-lg overflow-hidden'>
+          <div className='flex flex-col gap-0 w-full mx-auto overflow-hidden bg-surface rounded-lg'>
             {/* Header */}
 
             {/* Transcription */}
-            <div className='px-3.5 py-3 border-b border-line flex flex-col gap-1.5'>
-              <div className='flex gap-1.5'>
-                <div className='max-w-xs flex-1 flex flex-col gap-1 '>
-                  <label className='text-[10px] text-fg/60'>Language</label>
+            <div className='px-3.5 py-3 flex flex-col gap-1.5'>
+              <div className='flex gap-1.5 justify-evenly'>
+                <div className='max-w-[75px] flex-1 flex flex-col gap-1 '>
+                  <label className='text-[10px] text-fg/60 pl-2'>
+                    Language
+                  </label>
                   <div className='relative'>
                     <select
                       value={localLang}
                       onChange={(e) => setLocalLang(e.target.value as Language)}
-                      className='w-full appearance-none bg-page border border-line rounded-md pl-2 pr-6 py-1.5 text-[11px] text-fg outline-none focus:border-info transition-colors cursor-pointer'
+                      className='w-full appearance-none rounded-md pl-2 pr-6 py-1.5 text-[11px] text-fg hover:bg-page outline-none focus:border-info transition-colors cursor-pointer'
                     >
                       {LANGUAGES.map((l) => (
                         <option key={l} value={l}>
@@ -408,13 +412,13 @@ export default function ChatPanel({
                     <Chevron />
                   </div>
                 </div>
-                <div className='max-w-xs flex-1 flex flex-col gap-1 '>
-                  <label className='text-[10px] text-fg/60'>Speed</label>
+                <div className='max-w-[70px] flex-1 flex flex-col gap-1 '>
+                  <label className='text-[10px] text-fg/60 pl-2'>Speed</label>
                   <div className='relative'>
                     <select
                       value={localSpeed}
                       onChange={(e) => setLocalSpeed(e.target.value as Speed)}
-                      className='w-full appearance-none bg-page border border-line rounded-md pl-2 pr-6 py-1.5 text-[11px] font-mono text-fg outline-none focus:border-info transition-colors cursor-pointer'
+                      className='w-full appearance-none rounded-md pl-2 pr-6 py-1.5 text-[11px] text-fg hover:bg-page outline-none focus:border-info transition-colors cursor-pointer'
                     >
                       {SPEEDS.map((s) => (
                         <option key={s} value={s}>
@@ -425,14 +429,9 @@ export default function ChatPanel({
                     <Chevron />
                   </div>
                 </div>
-              </div>
-            </div>
-
-            {/* VAD */}
-            <div className='px-3.5 py-3 flex flex-col gap-1.5'>
-              <div className='flex gap-1.5'>
-                <div className='flex-1 flex flex-col gap-1 max-w-xs'>
-                  <label className='text-[10px] text-fg/60'>
+                {/* webcrtvad settings */}
+                <div className='flex-1 flex flex-col gap-1 max-w-[220px]'>
+                  <label className='text-[10px] text-fg/60 pl-2'>
                     VAD Sensitivity
                   </label>
                   <div className='relative'>
@@ -441,7 +440,7 @@ export default function ChatPanel({
                       onChange={(e) =>
                         setLocalSens(e.target.value as Sensitivity)
                       }
-                      className='w-full appearance-none bg-page border border-line rounded-md pl-2 pr-6 py-1.5 text-[11px] text-fg outline-none focus:border-info transition-colors cursor-pointer'
+                      className='w-full appearance-none rounded-md pl-2 pr-6 py-1.5 text-[11px] text-fg hover:bg-page outline-none focus:border-info transition-colors cursor-pointer'
                     >
                       {SENSITIVITIES.map((s) => (
                         <option key={s} value={s}>
@@ -452,13 +451,13 @@ export default function ChatPanel({
                     <Chevron />
                   </div>
                 </div>
-                <div className='max-w-xs flex-1 flex flex-col gap-1 '>
-                  <label className='text-[10px] text-fg/60'>Pause</label>
+                <div className='max-w-[70px] flex-1 flex flex-col gap-1 '>
+                  <label className='text-[10px] text-fg/60 pl-2'>Pause</label>
                   <div className='relative'>
                     <select
                       value={localPause}
                       onChange={(e) => setLocalPause(e.target.value as Pause)}
-                      className='w-full appearance-none bg-page border border-line rounded-md pl-2 pr-6 py-1.5 text-[11px] font-mono text-fg outline-none focus:border-info transition-colors cursor-pointer'
+                      className='w-full appearance-none rounded-md pl-2 pr-6 py-1.5 text-[11px] text-fg hover:bg-page outline-none focus:border-info transition-colors cursor-pointer'
                     >
                       {PAUSES.map((p) => (
                         <option key={p} value={p}>
@@ -477,7 +476,7 @@ export default function ChatPanel({
         /* ── ACTIVE / HAS HISTORY: transcript area ──────────────────────── */
         <div
           ref={scrollRef}
-          className='flex-1 min-h-0 overflow-y-auto flex flex-col gap-1.5 px-2.5 py-2'
+          className='flex-1 min-h-0 overflow-y-auto flex flex-col gap-1.5 px-2.5 py-2 bg-page'
         >
           {transcript.map((entry, i) => {
             const isAnimating = entry.timestamp === animatingTs;
@@ -568,7 +567,7 @@ export default function ChatPanel({
 
       {/* ── Bottom bar ───────────────────────────────────────────────────── */}
       {incidentUnlocked && (
-        <div className='shrink-0 border-t border-line px-3 py-1 bg-page'>
+        <div className='shrink-0 border-t border-line px-3 py-1 bg-surface'>
           {callActive ? (
             /* ── Active call controls ──────────────────────────────────── */
             <div className='flex flex-col gap-2 px-3 py-3.5'>
@@ -576,13 +575,13 @@ export default function ChatPanel({
               <div className='flex items-center gap-1.5'>
                 {/* Mic status pill */}
                 <div
-                  className={`flex items-center gap-1 px-2 py-1 rounded-full mt-3 border ${
+                  className={`flex min-w-[70px] items-center gap-1 px-2 py-1 rounded-full mt-3 border ${
                     micMuted
                       ? "bg-warning/10 border-warning/25"
                       : "bg-danger/8 border-danger/20"
                   }`}
                 >
-                  <div className='relative flex items-center justify-center w-3 h-3'>
+                  <div className='relative flex items-center text-center justify-center w-3 h-3'>
                     {!micMuted && (
                       <span className='absolute inset-0 rounded-full bg-danger/30 animate-ping' />
                     )}
@@ -601,7 +600,7 @@ export default function ChatPanel({
 
                 <div className='flex gap-3 items-center w-full max-w-sm justify-evenly mx-auto'>
                   <div className='max-w-xs flex flex-col gap-0.5'>
-                    <label className='text-[9px] text-fg/40 pl-0.5'>
+                    <label className='text-[9px] text-fg/40 pl-2'>
                       Language
                     </label>
                     <div className='flex max-w-xs relative'>
@@ -610,7 +609,7 @@ export default function ChatPanel({
                         onChange={(e) =>
                           handleLangChange(e.target.value as Language)
                         }
-                        className='w-full appearance-none bg-page border border-line rounded-md pl-2 pr-6 py-1 text-[10px] text-fg outline-none focus:border-info transition-colors cursor-pointer'
+                        className='w-full appearance-none  rounded-md pl-2 pr-6 py-1 text-[10px] text-fg hover:bg-page outline-none focus:border-info transition-colors cursor-pointer'
                       >
                         {LANGUAGES.map((l) => (
                           <option key={l} value={l}>
@@ -623,16 +622,14 @@ export default function ChatPanel({
                   </div>
 
                   <div className=' max-w-xs shrink-0 flex flex-col gap-0.5'>
-                    <label className='text-[9px] text-fg/40 pl-0.5'>
-                      Speed
-                    </label>
+                    <label className='text-[9px] text-fg/40 pl-2'>Speed</label>
                     <div className='flex max-w-xs relative'>
                       <select
                         value={localSpeed}
                         onChange={(e) =>
                           handleSpeedChange(e.target.value as Speed)
                         }
-                        className='w-full appearance-none bg-page border border-line rounded-md pl-2 pr-6 py-1 text-[10px] font-mono text-fg outline-none focus:border-info transition-colors cursor-pointer'
+                        className='w-full appearance-none  rounded-md pl-2 pr-6 py-1 text-[10px] text-fg hover:bg-page outline-none focus:border-info transition-colors cursor-pointer'
                       >
                         {SPEEDS.map((s) => (
                           <option key={s} value={s}>
@@ -645,7 +642,7 @@ export default function ChatPanel({
                   </div>
 
                   <div className=' max-w-xs shrink-0 flex flex-col gap-0.5'>
-                    <label className='text-[9px] text-fg/40 pl-0.5'>
+                    <label className='text-[9px] text-fg/40 pl-2'>
                       Sensitivity
                     </label>
                     <div className='flex max-w-xs relative'>
@@ -654,7 +651,7 @@ export default function ChatPanel({
                         onChange={(e) =>
                           handleSensChange(e.target.value as Sensitivity)
                         }
-                        className='w-full appearance-none bg-page border border-line rounded-md pl-2 pr-6 py-1 text-[10px] text-fg outline-none focus:border-info transition-colors cursor-pointer'
+                        className='w-full appearance-none  rounded-md pl-2 pr-6 py-1 text-[10px] text-fg hover:bg-page outline-none focus:border-info transition-colors cursor-pointer'
                       >
                         {SENSITIVITIES.map((s) => (
                           <option key={s} value={s}>
@@ -667,16 +664,14 @@ export default function ChatPanel({
                   </div>
 
                   <div className=' max-w-xs shrink-0 flex flex-col gap-0.5'>
-                    <label className='text-[9px] text-fg/40 pl-0.5'>
-                      Pause
-                    </label>
+                    <label className='text-[9px] text-fg/40 pl-2'>Pause</label>
                     <div className='flex max-w-xs relative'>
                       <select
                         value={localPause}
                         onChange={(e) =>
                           handlePauseChange(e.target.value as Pause)
                         }
-                        className='w-full appearance-none bg-page border border-line rounded-md pl-2 pr-6 py-1 text-[10px] font-mono text-fg outline-none focus:border-info transition-colors cursor-pointer'
+                        className='w-full appearance-none  rounded-md pl-2 pr-6 py-1 text-[10px] text-fg hover:bg-page outline-none focus:border-info transition-colors cursor-pointer'
                       >
                         {PAUSES.map((p) => (
                           <option key={p} value={p}>
