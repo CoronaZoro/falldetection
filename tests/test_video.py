@@ -1,6 +1,6 @@
 """
 tests/test_video.py — GUARDIAN Fall Detection
-Local inference via Roboflow inference SDK (no network round trip).
+Local inference via Ultralytics YOLO (models/best.pt).
 Press Q to quit.
 """
 
@@ -9,22 +9,18 @@ import time
 import threading
 import cv2
 from dotenv import load_dotenv
+from ultralytics import YOLO
 
 load_dotenv()
 
-from inference import get_model
 from alerts.fall_logic   import FallLogic, ALARM, STABLE, SLEEPING, TRANSITION, VALIDATION, INACTIVITY
 from alerts.pose_analyzer import PoseAnalyzer
 from alerts.server import start_server, broadcast_fall, broadcast_recovery, update_frame, broadcast_heartbeat, broadcast_state, get_viz_flags, register_fall_logic, get_config
 
-# ── Load model locally (downloaded once, cached on disk) ─────
-# Model runs on-device — no network call per frame.
-_model_id = f"{os.getenv('ROBOFLOW_PROJECT')}/{os.getenv('ROBOFLOW_VERSION', '1')}"
-print(f"[Model] Loading {_model_id} (may take 30–60s)...")
-model = get_model(
-    model_id = _model_id,
-    api_key  = os.getenv("ROBOFLOW_API_KEY"),
-)
+# ── Load local model ──────────────────────────────────────────
+_model_path = "models/best.pt"
+print(f"[Model] Loading {_model_path}...")
+model = YOLO(_model_path)
 print("[Model] Ready")
 
 INFER_CONF = 0.4    # confidence threshold (0–1)
@@ -90,10 +86,23 @@ while True:
     h, w = frame.shape[:2]
     now  = time.time()
 
-    # ── Run Roboflow inference ────────────────────────────────
+    # ── Run YOLO inference ────────────────────────────────────
     try:
-        results = model.infer(frame, confidence=INFER_CONF)
-        preds   = results[0].predictions if results else []
+        results = model(frame, conf=INFER_CONF, verbose=False)
+        boxes   = results[0].boxes
+        names   = results[0].names
+        preds   = []
+        if boxes is not None and len(boxes):
+            for box in boxes:
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
+                preds.append({
+                    "x1":        int(x1),
+                    "y1":        int(y1),
+                    "x2":        int(x2),
+                    "y2":        int(y2),
+                    "class_name": names[int(box.cls[0])],
+                    "confidence": float(box.conf[0]),
+                })
     except Exception as exc:
         print(f"[Inference]  {exc}")
         preds = []
@@ -101,12 +110,7 @@ while True:
     # ── Build person bounding boxes for pose matching ─────────
     person_boxes = {}
     for i, pred in enumerate(preds):
-        person_boxes[i] = (
-            int(pred.x - pred.width  / 2),
-            int(pred.y - pred.height / 2),
-            int(pred.x + pred.width  / 2),
-            int(pred.y + pred.height / 2),
-        )
+        person_boxes[i] = (pred["x1"], pred["y1"], pred["x2"], pred["y2"])
 
     # ── Run MediaPipe pose analysis ───────────────────────────
     pose_signals = pose_analyzer.analyze(frame, person_boxes) if preds else {}
@@ -125,8 +129,8 @@ while True:
     for i, pred in enumerate(preds):
         x1, y1, x2, y2 = person_boxes[i]
 
-        label      = pred.class_name    # "up" | "bending" | "down"
-        confidence = pred.confidence
+        label      = pred["class_name"]  # "up" | "bending" | "down"
+        confidence = pred["confidence"]
         color      = COLORS.get(label, (255, 255, 255))
         pose       = pose_signals.get(i)
 
