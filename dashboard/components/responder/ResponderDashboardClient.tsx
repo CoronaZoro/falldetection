@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import LiveFeed from "@/components/LiveFeed";
 import EventLog from "@/components/EventLog";
@@ -14,8 +14,11 @@ import {
   Activity,
   Users,
   CheckCircle,
-  ChevronRight,
+  XCircle,
   AlertTriangle,
+  Navigation,
+  MapPin,
+  ArrowRight,
 } from "lucide-react";
 import { colors, rgba } from "@/lib/colors";
 import type {
@@ -70,6 +73,7 @@ export default function ResponderDashboardClient({
   const [speed, setSpeed] = useState<ChatSpeed>("1x");
   const [isThinking, setIsThinking] = useState(false);
   const [isPreparingAudio, setIsPreparingAudio] = useState(false);
+  const [isSpeakingAudio, setIsSpeakingAudio] = useState(false);
   const [micListening, setMicListening] = useState(false);
   const [micSpeaking, setMicSpeaking] = useState(false);
   const [micMuted, setMicMuted] = useState(false);
@@ -198,6 +202,8 @@ export default function ResponderDashboardClient({
           !muted && (msg.status === "listening" || msg.status === "speaking"),
         );
         setMicSpeaking(msg.status === "speaking");
+        // mic_status fires at the start of each listen cycle — AI is no longer speaking
+        setIsSpeakingAudio(false);
         return;
       }
 
@@ -369,6 +375,7 @@ export default function ResponderDashboardClient({
         } else {
           setIsThinking(false);
           setIsPreparingAudio(false); // audio is now playing, text revealed
+          setIsSpeakingAudio(true);
         }
       }
       if (msg.type === "call_status") {
@@ -444,6 +451,15 @@ export default function ResponderDashboardClient({
       /* non-critical */
     }
   }, [API_URL, micMuted]);
+
+  const onStopSpeech = useCallback(async () => {
+    try {
+      await fetch(`${API_URL}/call/interrupt`, { method: "POST" });
+      setIsSpeakingAudio(false);
+    } catch {
+      /* non-critical */
+    }
+  }, [API_URL]);
 
   // Mid-call language / speed / mic change — updates server globals live
   const onCallSettings = useCallback(
@@ -553,20 +569,18 @@ export default function ResponderDashboardClient({
             size='sm'
             pulse={isAlarming}
           />
-          <span className='text-[11px] text-fg-muted hidden sm:block'>
+          <span className='text-[11px] text-fg hidden sm:block'>
             {isAlarming
               ? `Person ${activeAlert.personId} · AR ${activeAlert.ar?.toFixed(2)} · ${(finalDownDuration ?? totalDownRef.current).toFixed(0)}s down`
               : "Normal"}
           </span>
         </div>
         <div className='flex items-center gap-3 text-[11px]'>
-          <span className='flex items-center gap-1 text-fg-muted'>
+          <span className='flex items-center gap-1 text-fg'>
             <Users size={11} />
             <span className='font-mono'>{personsDetected}</span>
           </span>
-          <span className='text-fg-muted font-mono hidden sm:block'>
-            {userName}
-          </span>
+          <span className='text-fg font-mono hidden sm:block'>{userName}</span>
           {wsStatus === "connected" && (
             <span className='flex items-center gap-1 text-success'>
               <Wifi size={11} />
@@ -593,17 +607,17 @@ export default function ResponderDashboardClient({
         {/* ── LEFT: Feed + Event Log ──────────────────────────────── */}
         <div className='flex flex-col gap-2 min-h-0 order-2 md:order-1'>
           {/* Live feed */}
-          <div className='shrink-0 bg-surface border border-line rounded overflow-hidden'>
+          <div className='shrink-0 bg-surface border border-line rounded overflow-hidden py-2.5'>
             <LiveFeed online={wsStatus === "connected"} />
           </div>
 
           {/* Event log — fills remaining left column height */}
           <div className='flex-1 min-h-[120px] md:min-h-0 bg-surface border border-line rounded-lg overflow-hidden flex flex-col'>
             <div className='shrink-0 flex items-center gap-1.5 px-3 py-2 border-b border-line bg-elevated/30'>
-              <Activity size={11} className='text-fg-muted/60' />
+              <Activity size={11} className='text-fg/60' />
               <p className='section-label'>Event Log</p>
               {eventLog.length > 0 && (
-                <span className='ml-auto font-mono text-[9px] text-fg-muted/40 bg-line/60 px-1.5 py-0.5 rounded-full'>
+                <span className='ml-auto font-mono text-[9px] text-fg/40 bg-line/60 px-1.5 py-0.5 rounded-full'>
                   {eventLog.length}
                 </span>
               )}
@@ -618,58 +632,63 @@ export default function ResponderDashboardClient({
         <div className='flex flex-col gap-2 min-h-0 order-1 md:order-2'>
           {/* Alert card — compact idle, grows on alarm, capped at ~264px */}
           <div
-            className='shrink-0 min-h-[300px] rounded border overflow-hidden transition-colors duration-300'
+            className='shrink-0 min-h-[250px] bg-surface rounded border overflow-hidden transition-colors duration-300'
             style={{
-              background: selfRecovered
-                ? rgba(colors.success, 0.05)
-                : isAlarming
-                  ? rgba(alertColor, 0.05)
-                  : colors.surface,
               borderColor: selfRecovered
-                ? rgba(colors.success, 0.22)
+                ? rgba(colors.success, 0.45)
                 : isAlarming
-                  ? rgba(alertColor, 0.22)
-                  : colors.line,
+                  ? rgba(alertColor, 0.45)
+                  : rgba(colors.line, 1),
             }}
           >
-            <div className='p-3 max-h-full overflow-y-auto my-auto'>
+            <div className='max-h-full overflow-y-auto my-auto p-3'>
               {selfRecovered ? (
-                /* ── Self-recovery ────────────────────────────────── */
-                <div className='flex items-center justify-center my-auto min-h-[300px] bg-page'>
-                  <div className='flex flex-col items-center gap-1.5 h-full'>
-                    <div className='w-7 h-7 rounded-full bg-line/60 flex items-center justify-center shrink-0'>
-                      <CheckCircle size={13} className='text-fg-success' />
+                /* ── Self-recovery ── */
+                <div className='flex items-center justify-center my-auto min-h-[250px]'>
+                  <div className='flex flex-col items-center gap-1.5'>
+                    <div
+                      className='w-9 h-9 rounded-full flex items-center justify-center shrink-0'
+                      style={{
+                        background: rgba(colors.success, 0.15),
+                        border: `1px solid ${rgba(colors.success, 0.3)}`,
+                      }}
+                    >
+                      <CheckCircle size={15} className='text-success' />
                     </div>
-                    <p className='text-xs font-medium text-success'>
-                      Fall : Self Recovered
+                    <p className='text-xs font-semibold text-success'>
+                      Fall · Self Recovered
                     </p>
-                    <p className='text-[10px] text-success/80 mt-0.5'>
-                      Person got up and recovery was detected.
+                    <p
+                      className='text-[10px] mt-0.5'
+                      style={{ color: rgba(colors.success, 0.7) }}
+                    >
+                      Person got up — recovery detected.
                     </p>
                   </div>
                 </div>
               ) : !isAlarming ? (
-                /* ── Idle ─────────────────────────────────────────── */
-                <div className='flex items-center justify-center my-auto min-h-[300px] bg-page'>
-                  <div className='flex flex-col items-center gap-1.5 h-full'>
-                    <div className='w-7 h-7 rounded-full bg-line/60 flex items-center justify-center shrink-0'>
-                      <CheckCircle size={13} className='text-fg-muted/50' />
+                /* ── Idle ── */
+                <div className='flex items-center justify-center my-auto min-h-[250px] bg-page'>
+                  <div className='flex flex-col items-center gap-1.5'>
+                    <div className='w-9 h-9 rounded-full bg-line/60 flex items-center justify-center shrink-0'>
+                      <CheckCircle size={15} className='text-fg/40' />
                     </div>
-                    <p className='text-xs font-medium text-fg/80'>
+                    <p className='text-xs font-medium text-fg/70'>
                       No active alerts
                     </p>
-                    <p className='text-[10px] text-fg-muted/50 mt-0.5'>
+                    <p className='text-[10px] text-fg/50 mt-0.5'>
                       System monitoring
                     </p>
                   </div>
                 </div>
               ) : (
-                /* ── Alarm ────────────────────────────────────────── */
+                /* ── Alarm ── */
                 <div className='flex flex-col gap-3'>
                   {/* Headline row */}
-                  <div className='flex items-start justify-between gap-2'>
+                  {/* Headline row */}
+                  <div className='flex items-center justify-between gap-2'>
                     <div>
-                      <div className='flex items-center gap-1.5 mb-1'>
+                      <div className='flex items-center gap-1.5 mb-0.5'>
                         <span
                           className='w-1.5 h-1.5 rounded-full animate-pulse'
                           style={{ background: alertColor }}
@@ -681,20 +700,34 @@ export default function ResponderDashboardClient({
                           Fall Detected
                         </p>
                       </div>
-                      <p className='text-lg font-bold text-fg leading-tight'>
+                      <p className='text-base font-bold text-fg leading-tight'>
                         Person {activeAlert.personId}
                       </p>
+                      <div className='flex items-center gap-1.5 mt-1'>
+                        <span
+                          className='font-mono text-[10px] px-2 py-0.5 rounded-full'
+                          style={{
+                            color: alertColor,
+                            border: `1px solid ${alertColor}40`,
+                          }}
+                        >
+                          AR {activeAlert.ar?.toFixed(2)}
+                        </span>
+                        <span className='font-mono text-[10px] text-fg-muted/50'>
+                          ID #{activeAlert.personId}
+                        </span>
+                      </div>
                     </div>
-                    {/* Down time as main metric */}
+                    {/* Down time */}
                     <div className='text-right shrink-0'>
                       <p
-                        className='font-mono font-bold text-2xl leading-none'
+                        className='font-mono font-bold text-xl leading-none'
                         style={{ color: alertColor }}
                       >
                         {finalDownDuration !== null
                           ? `${finalDownDuration.toFixed(0)}`
                           : `${((activeAlert.downDuration ?? 0) + elapsedSeconds).toFixed(0)}`}
-                        <span className='text-sm font-normal ml-0.5 opacity-60'>
+                        <span className='text-xs font-normal ml-0.5 opacity-60'>
                           s
                         </span>
                       </p>
@@ -704,27 +737,9 @@ export default function ResponderDashboardClient({
                     </div>
                   </div>
 
-                  {/* Metric chips */}
-                  <div className='flex items-center gap-1.5'>
-                    <span
-                      className='font-mono text-[10px] px-2 py-0.5 rounded-full'
-                      style={{
-                        background: `${alertColor}14`,
-                        color: alertColor,
-                        border: `1px solid ${alertColor}30`,
-                      }}
-                    >
-                      AR {activeAlert.ar?.toFixed(2)}
-                    </span>
-                    <span className='text-[10px] text-fg-muted/50'>·</span>
-                    <span className='font-mono text-[10px] text-fg-muted/70'>
-                      ID #{activeAlert.personId}
-                    </span>
-                  </div>
+                  <div className='h-px bg-line/40' />
 
-                  <div className='h-px bg-line' />
-
-                  {/* Unacknowledged: countdown + ACK button */}
+                  {/* Unacknowledged */}
                   {incidentStatus === "UNACKNOWLEDGED" && (
                     <>
                       {!escalated && (
@@ -736,26 +751,41 @@ export default function ResponderDashboardClient({
                       )}
                       {escalated && (
                         <div
-                          className='flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold'
+                          className='flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold'
                           style={{
-                            background: rgba(colors.danger, 0.08),
                             color: colors.danger,
-                            border: `1px solid ${rgba(colors.danger, 0.2)}`,
+                            border: `1px solid ${rgba(colors.danger, 0.35)}`,
                           }}
                         >
+                          <span className='w-1.5 h-1.5 rounded-full bg-danger animate-pulse shrink-0' />
                           Active incident — responder action required
                         </div>
                       )}
                       {lineNotified && (
-                        <div className='flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-success/8 text-success border border-success/20'>
+                        <div className='flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-success border border-success/35'>
+                          <CheckCircle size={11} className='shrink-0' />
                           LINE alert sent to all responders
                         </div>
                       )}
                       {/* Acknowledge CTA */}
                       <button
                         onClick={acknowledge}
-                        className='w-full py-2 rounded-lg font-semibold text-xs border-none cursor-pointer transition-all hover:opacity-90 active:scale-[0.98] flex items-center justify-center gap-1.5'
-                        style={{ background: alertColor, color: colors.page }}
+                        className='w-full py-2.5 rounded-lg font-semibold text-xs cursor-pointer transition-all active:scale-[0.98] flex items-center justify-center gap-1.5'
+                        style={{
+                          background: rgba(alertColor, 0.13),
+                          color: alertColor,
+                          border: `1px solid ${rgba(alertColor, 0.3)}`,
+                        }}
+                        onMouseEnter={(e) => {
+                          (
+                            e.currentTarget as HTMLButtonElement
+                          ).style.background = rgba(alertColor, 0.2);
+                        }}
+                        onMouseLeave={(e) => {
+                          (
+                            e.currentTarget as HTMLButtonElement
+                          ).style.background = rgba(alertColor, 0.13);
+                        }}
                       >
                         <CheckCircle size={13} />
                         Acknowledge Incident
@@ -765,102 +795,228 @@ export default function ResponderDashboardClient({
 
                   {/* Post-ack status flow */}
                   {incidentStatus !== "UNACKNOWLEDGED" && (
-                    <div className='flex flex-col gap-1.5'>
-                      <StatusBadge status={incidentStatus} size='sm' />
-                      <div className='flex flex-col gap-1'>
-                        {incidentStatus === "ACKNOWLEDGED" && (
-                          <FlowBtn
-                            label='Responding'
-                            color={colors.warning}
-                            onClick={() => updateStatus("RESPONDING")}
-                          />
-                        )}
-                        {incidentStatus === "RESPONDING" && (
-                          <FlowBtn
-                            label='On Scene'
-                            color={colors.accent}
-                            onClick={() => updateStatus("ON_SCENE")}
-                          />
-                        )}
+                    <div className='flex flex-col gap-2'>
+                      {/* Current status block */}
+                      {(() => {
+                        const cfg: Record<
+                          string,
+                          {
+                            label: string;
+                            color: string;
+                            icon: React.ReactNode;
+                          }
+                        > = {
+                          ACKNOWLEDGED: {
+                            label: "Acknowledged",
+                            color: colors.warning,
+                            icon: <CheckCircle size={13} />,
+                          },
+                          RESPONDING: {
+                            label: "Responding",
+                            color: colors.warning,
+                            icon: <Navigation size={13} />,
+                          },
+                          ON_SCENE: {
+                            label: "On Scene",
+                            color: colors.accent,
+                            icon: <MapPin size={13} />,
+                          },
+                          RESOLVED: {
+                            label: "Resolved",
+                            color: colors.success,
+                            icon: <CheckCircle size={13} />,
+                          },
+                          FALSE_ALARM: {
+                            label: "False Alarm",
+                            color: colors.fg,
+                            icon: <XCircle size={13} />,
+                          },
+                          RECOVERED: {
+                            label: "Recovered",
+                            color: colors.success,
+                            icon: <CheckCircle size={13} />,
+                          },
+                        };
+                        const s = cfg[incidentStatus];
+                        if (!s) return null;
+                        return (
+                          <div
+                            className='flex items-center gap-2.5 px-2.5 py-2 rounded-lg'
+                            style={{
+                              border: `1px solid ${rgba(s.color, 0.3)}`,
+                            }}
+                          >
+                            <div
+                              className='w-7 h-7 rounded-full flex items-center justify-center shrink-0'
+                              style={{ background: rgba(s.color, 0.12) }}
+                            >
+                              <span style={{ color: s.color }}>{s.icon}</span>
+                            </div>
+                            <div>
+                              <p className='text-[9px] uppercase tracking-widest text-fg/50'>
+                                Current Status
+                              </p>
+                              <p
+                                className='text-sm font-bold leading-tight'
+                                style={{ color: s.color }}
+                              >
+                                {s.label}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
-                        {(incidentStatus === "ON_SCENE" ||
-                          incidentStatus === "RESPONDING") &&
-                          !pendingResolve && (
-                            <div className='flex gap-1.5 mt-0.5'>
+                      {/* Step: en route */}
+                      {incidentStatus === "ACKNOWLEDGED" && (
+                        <FlowBtn
+                          label="I'm Responding"
+                          description='En route to the incident location'
+                          icon={<Navigation size={11} />}
+                          color={colors.warning}
+                          onClick={() => updateStatus("RESPONDING")}
+                        />
+                      )}
+
+                      {/* Step: on scene */}
+                      {incidentStatus === "RESPONDING" && (
+                        <FlowBtn
+                          label='Arrived on Scene'
+                          description='I have reached the location'
+                          icon={<MapPin size={11} />}
+                          color={colors.accent}
+                          onClick={() => updateStatus("ON_SCENE")}
+                        />
+                      )}
+
+                      {/* Close buttons */}
+                      {(incidentStatus === "ON_SCENE" ||
+                        incidentStatus === "RESPONDING") &&
+                        !pendingResolve && (
+                          <div className='flex flex-col gap-1.5 pt-0.5'>
+                            <p className='text-[9px] text-fg/50 uppercase tracking-wider pl-0.5'>
+                              Close incident
+                            </p>
+                            <div className='flex gap-1.5'>
                               <FlowBtn
                                 label='Resolved'
+                                description='Emergency handled'
+                                icon={<CheckCircle size={11} />}
                                 color={colors.success}
                                 onClick={() => setPendingResolve("RESOLVED")}
                                 flex
                               />
                               <FlowBtn
                                 label='False Alarm'
-                                color={colors.fgMuted}
+                                description='No emergency found'
+                                icon={<XCircle size={11} />}
+                                color={colors.fg}
                                 onClick={() => setPendingResolve("FALSE_ALARM")}
                                 flex
                               />
                             </div>
-                          )}
+                          </div>
+                        )}
 
-                        {/* Confirmation prompt */}
-                        {pendingResolve && (
-                          <div
-                            className='rounded-lg border p-3 flex flex-col gap-2.5'
-                            style={{
-                              background: rgba(
-                                pendingResolve === "RESOLVED"
-                                  ? colors.success
-                                  : colors.fgMuted,
-                                0.05,
-                              ),
-                              borderColor: rgba(
-                                pendingResolve === "RESOLVED"
-                                  ? colors.success
-                                  : colors.fgMuted,
-                                0.18,
-                              ),
-                            }}
-                          >
-                            <p className='text-[11px] text-fg leading-snug'>
-                              {pendingResolve === "RESOLVED"
-                                ? "Confirm this incident is fully resolved?"
-                                : "Confirm this was a false alarm?"}
-                            </p>
-                            <div className='flex gap-1.5'>
-                              <button
-                                onClick={() => updateStatus(pendingResolve)}
-                                className='flex-1 py-1.5 rounded-md text-[11px] font-semibold cursor-pointer transition-opacity hover:opacity-90 border-none'
-                                style={{
-                                  background:
-                                    pendingResolve === "RESOLVED"
-                                      ? colors.success
-                                      : colors.fgMuted,
-                                  color: colors.page,
-                                }}
-                              >
+                      {/* Confirmation prompt */}
+                      {pendingResolve && (
+                        <div
+                          className='rounded-lg border p-3 flex flex-col gap-2.5'
+                          style={{
+                            background: rgba(
+                              pendingResolve === "RESOLVED"
+                                ? colors.success
+                                : colors.fg,
+                              0.07,
+                            ),
+                            borderColor: rgba(
+                              pendingResolve === "RESOLVED"
+                                ? colors.success
+                                : colors.fg,
+                              0.2,
+                            ),
+                          }}
+                        >
+                          <div className='flex items-start gap-2'>
+                            <div
+                              className='w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5'
+                              style={{
+                                background: rgba(
+                                  pendingResolve === "RESOLVED"
+                                    ? colors.success
+                                    : colors.fg,
+                                  0.15,
+                                ),
+                              }}
+                            >
+                              {pendingResolve === "RESOLVED" ? (
+                                <CheckCircle
+                                  size={11}
+                                  style={{ color: colors.success }}
+                                />
+                              ) : (
+                                <XCircle
+                                  size={11}
+                                  style={{ color: colors.fg }}
+                                />
+                              )}
+                            </div>
+                            <div>
+                              <p className='text-[11px] font-semibold text-fg'>
                                 {pendingResolve === "RESOLVED"
-                                  ? "Confirm Resolved"
-                                  : "Confirm False Alarm"}
-                              </button>
-                              <button
-                                onClick={() => setPendingResolve(null)}
-                                className='px-3 py-1.5 rounded-md text-[11px] text-fg-muted border border-line bg-transparent cursor-pointer hover:text-fg transition-colors'
-                              >
-                                Cancel
-                              </button>
+                                  ? "Mark as Resolved?"
+                                  : "Mark as False Alarm?"}
+                              </p>
+                              <p className='text-[10px] text-fg/70 mt-0.5'>
+                                {pendingResolve === "RESOLVED"
+                                  ? "This will close and archive the incident."
+                                  : "This will dismiss the alert as a false detection."}
+                              </p>
                             </div>
                           </div>
-                        )}
-
-                        {(incidentStatus === "RESOLVED" ||
-                          incidentStatus === "RECOVERED" ||
-                          incidentStatus === "FALSE_ALARM") && (
-                          <div className='flex items-center gap-2 px-2.5 py-2 rounded-lg bg-success/8 border border-success/20 text-[11px] text-success font-semibold mt-0.5'>
-                            <CheckCircle size={12} />
-                            Closing Incident…
+                          <div className='flex gap-1.5'>
+                            <button
+                              onClick={() => updateStatus(pendingResolve)}
+                              className='flex-1 py-1.5 rounded-md text-[11px] font-semibold cursor-pointer transition-all active:scale-[0.98]'
+                              style={{
+                                background: rgba(
+                                  pendingResolve === "RESOLVED"
+                                    ? colors.success
+                                    : colors.fg,
+                                  0.15,
+                                ),
+                                color:
+                                  pendingResolve === "RESOLVED"
+                                    ? colors.success
+                                    : colors.fg,
+                                border: `1px solid ${rgba(
+                                  pendingResolve === "RESOLVED"
+                                    ? colors.success
+                                    : colors.fg,
+                                  0.3,
+                                )}`,
+                              }}
+                            >
+                              Confirm
+                            </button>
+                            <button
+                              onClick={() => setPendingResolve(null)}
+                              className='px-3 py-1.5 rounded-md text-[11px] text-fg/70 border border-line/60 bg-transparent cursor-pointer hover:text-fg hover:border-line transition-colors'
+                            >
+                              Cancel
+                            </button>
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
+
+                      {(incidentStatus === "RESOLVED" ||
+                        incidentStatus === "RECOVERED" ||
+                        incidentStatus === "FALSE_ALARM") && (
+                        <div className='flex items-center gap-2 px-2.5 py-2 rounded-lg border border-success/35 text-[11px] text-success font-semibold'>
+                          <CheckCircle size={12} />
+                          Closing Incident…
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -887,6 +1043,8 @@ export default function ResponderDashboardClient({
               micSpeaking={micSpeaking}
               micMuted={micMuted}
               onToggleMute={onToggleMute}
+              isSpeakingAudio={isSpeakingAudio}
+              onStopSpeech={onStopSpeech}
             />
           </div>
         </div>
@@ -899,11 +1057,15 @@ export default function ResponderDashboardClient({
 
 function FlowBtn({
   label,
+  description,
+  icon,
   color,
   onClick,
   flex = false,
 }: {
   label: string;
+  description?: string;
+  icon?: React.ReactNode;
   color: string;
   onClick: () => void;
   flex?: boolean;
@@ -911,23 +1073,53 @@ function FlowBtn({
   return (
     <button
       onClick={onClick}
-      className={`${flex ? "flex-1" : "w-full"} bg-transparent rounded-lg px-3 py-2 text-[11px] font-semibold cursor-pointer flex items-center justify-between gap-2 transition-all active:scale-[0.98] border`}
+      className={`${flex ? "flex-1" : "w-full"} rounded-lg px-2.5 py-2 text-left cursor-pointer flex items-center gap-2.5 transition-all active:scale-[0.98] border`}
       style={{
+        background: rgba(color, 0.07),
         color,
-        borderColor: rgba(color, 0.22),
+        borderColor: rgba(color, 0.2),
       }}
       onMouseEnter={(e) => {
         (e.currentTarget as HTMLButtonElement).style.background = rgba(
           color,
-          0.08,
+          0.14,
+        );
+        (e.currentTarget as HTMLButtonElement).style.borderColor = rgba(
+          color,
+          0.35,
         );
       }}
       onMouseLeave={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+        (e.currentTarget as HTMLButtonElement).style.background = rgba(
+          color,
+          0.07,
+        );
+        (e.currentTarget as HTMLButtonElement).style.borderColor = rgba(
+          color,
+          0.2,
+        );
       }}
     >
-      <span>{label}</span>
-      <ChevronRight size={11} style={{ opacity: 0.7 }} />
+      {icon && (
+        <div
+          className='w-6 h-6 rounded-full flex items-center justify-center shrink-0'
+          style={{ background: rgba(color, 0.15) }}
+        >
+          {icon}
+        </div>
+      )}
+      <div className='flex-1 min-w-0'>
+        <div className='text-[11px] font-semibold leading-tight'>{label}</div>
+        {description && !flex && (
+          <div
+            className='text-[9px] mt-0.5 leading-tight'
+            style={{ color: rgba(color, 0.65) }}
+          >
+            {description}
+          </div>
+        )}
+      </div>
+      <ArrowRight size={11} style={{ opacity: 0.5, flexShrink: 0 }} />
     </button>
   );
 }

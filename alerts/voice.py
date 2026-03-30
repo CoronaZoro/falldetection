@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import queue
 import subprocess
 import threading
 import time
@@ -33,7 +34,7 @@ _LOCATION = "Rangsit University, Pathum Thani, Thailand"
 
 
 # Two system prompt tiers: authorized healthcare provider vs. bystander
-_AUTHORIZED_PROMPT = """You are an emergency medical voice assistant with live call integrated into a fall detection system.
+_AUTHORIZED_PROMPT = """You are an emergency medical voice assistant with live call integrated into a fall detection system. Your name is PALADIN.
 Location of incident: {location}
 
 ROLE: The user is an **authorized healthcare provider** on the scene.
@@ -56,7 +57,7 @@ BEHAVIOR:
 5. Keep initial responses under 50 words. Detailed follow-ups under 150 words.
 6. Do NOT use markdown, bullet points, asterisks, em dashes, or numbered lists.
    Write in plain flowing sentences — this will be spoken aloud.
-7. If the user asks for emergency contact info, provide the nearest hospital contact infos in the area."""
+7. If the user asks for emergency contact info, provide the nearest hospital contact infos in the area. When pronouncing emergency numbers, speak the numbers one by one but write them out in numerals without spaces."""
 
 _UNAUTHORIZED_PROMPT = """You are an emergency voice assistant integrated into a fall detection system.
 Location of incident: {location}
@@ -80,7 +81,7 @@ BEHAVIOR:
 4. Keep responses under 100 words.
 5. Do NOT use markdown, bullet points, asterisks, em dashes, or numbered lists.
    Write in plain flowing sentences — this will be spoken aloud.
-7. If the user asks for emergency contact info, provide the nearest hospital contact infos in the area."""
+7. If the user asks for emergency contact info, provide the nearest hospital contact infos in the area. When pronouncing emergency numbers, speak the numbers one by one but write them out in numerals without spaces."""
 
 
 # Language name -> Google STT locale and Edge TTS neural voice
@@ -115,6 +116,7 @@ _MAX_HISTORY  = 20      # rolling window of messages kept in context (10 exchang
 # Session globals — read each loop iteration; changes take effect next cycle
 _voice_active:             bool  = False
 _mic_muted:                bool  = False
+_call_generation:          int   = 0   # incremented each start; old threads exit when mismatched
 _current_lang:             str   = "English"
 _current_voice:            str   = _EDGE_VOICE_MAP["English"]
 _current_stt_lang:         str   = _STT_LANG_MAP["English"]
@@ -172,6 +174,22 @@ class InterruptibleSpeaker:
             time.sleep(0.15)
             if on_play_start:
                 on_play_start()
+            self._process.wait()
+        except Exception as exc:
+            print(f"[Voice] afplay failed: {exc}")
+        finally:
+            with self._lock:
+                self._process = None
+
+    def speak_file(self, path: str) -> None:
+        """Play a pre-generated audio file. Blocks until done or stopped."""
+        try:
+            with self._lock:
+                self._process = subprocess.Popen(
+                    ["afplay", path],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
             self._process.wait()
         except Exception as exc:
             print(f"[Voice] afplay failed: {exc}")
@@ -243,6 +261,7 @@ def _capture_utterance(
     timeout_secs:      float    = 15.0,
     phrase_limit_secs: float    = 30.0,
     on_speech_start:   callable = None,
+    should_stop:       callable = None,
 ) -> bytes:
     """Capture one utterance via WebRTC VAD. Returns raw 16-bit mono PCM.
 
@@ -266,6 +285,8 @@ def _capture_utterance(
     phrase_deadline: float | None = None
 
     while True:
+        if should_stop and should_stop():
+            raise StopIteration("call stopped")
         now = time.time()
         if not in_speech and now > deadline:
             raise TimeoutError("no speech detected within timeout")
@@ -300,9 +321,12 @@ def _capture_utterance(
 _SENTENCE_ENDS = ('.', '!', '?', '。', '！', '？', '…', '\n')
 
 
-def _voice_loop(is_authorized: bool, incident: IncidentContext | None = None) -> None:
+def _voice_loop(is_authorized: bool, incident: IncidentContext | None = None, generation: int = 0) -> None:
     """Daemon thread: listen -> transcribe -> ask Claude -> speak, until stopped."""
     global _voice_active
+
+    def _active() -> bool:
+        return _voice_active and _call_generation == generation
 
     # Lazy imports so the server starts even if voice deps are missing
     try:
@@ -369,7 +393,7 @@ def _voice_loop(is_authorized: bool, incident: IncidentContext | None = None) ->
         return 3
 
     try:
-        while _voice_active:
+        while _active():
             try:
                 # listen
                 status = "muted" if _mic_muted else "listening"
@@ -386,11 +410,15 @@ def _voice_loop(is_authorized: bool, incident: IncidentContext | None = None) ->
                     on_speech_start   = None if _mic_muted else lambda: _broadcast(
                         {"type": "mic_status", "status": "speaking", "timestamp": time.time()}
                     ),
+                    should_stop       = lambda: not _active(),
                 )
 
                 # Discard captured audio when muted — don't send to STT or Claude
                 if _mic_muted:
                     continue
+
+                if not _active():
+                    break
 
                 audio = sr.AudioData(pcm_bytes, _SAMPLE_RATE, 2)
 
@@ -398,11 +426,23 @@ def _voice_loop(is_authorized: bool, incident: IncidentContext | None = None) ->
                 user_txt = recognizer.recognize_google(audio, language=_current_stt_lang)
                 _tx("user", user_txt)
 
+                if not _active():
+                    break
+
                 history.append({"role": "user", "content": user_txt})
                 if len(history) > _MAX_HISTORY:
                     history = history[-_MAX_HISTORY:]
 
-                # ask claude, split reply into sentences for faster TTS start
+                # Parallel TTS pipeline:
+                # As Claude streams each sentence, kick off TTS generation
+                # immediately in a background thread. Playback starts as soon
+                # as sentence 1's audio is ready — no waiting for later sentences.
+                try:
+                    import edge_tts as _edge_tts
+                except ImportError:
+                    print("[Voice] edge-tts not installed")
+                    continue
+
                 base = (
                     _AUTHORIZED_PROMPT if is_authorized else _UNAUTHORIZED_PROMPT
                 ).format(location=_LOCATION, language=_current_lang)
@@ -411,8 +451,37 @@ def _voice_loop(is_authorized: bool, incident: IncidentContext | None = None) ->
 
                 full_reply   = ""
                 speak_buffer = ""
-                sentences: list[str] = []
+                tts_q:        queue.Queue = queue.Queue()
+                tts_failed:   set         = set()
+                s_idx        = 0
 
+                def _gen_tts(idx: int, text: str, path: str, ev: threading.Event):
+                    async def _inner():
+                        await _edge_tts.Communicate(
+                            text, _current_voice, rate=_current_rate
+                        ).save(path)
+                    try:
+                        asyncio.run(_inner())
+                    except Exception as exc:
+                        print(f"[Voice] TTS failed sentence {idx}: {exc}")
+                        tts_failed.add(idx)
+                    finally:
+                        ev.set()
+
+                def _queue_sentence(text: str):
+                    nonlocal s_idx
+                    clean = text.replace("*", "").replace("#", "").strip()
+                    if not clean:
+                        return
+                    path = f"/tmp/guardian_tts_{generation}_{s_idx}.mp3"
+                    ev   = threading.Event()
+                    threading.Thread(
+                        target=_gen_tts, args=(s_idx, clean, path, ev), daemon=True
+                    ).start()
+                    tts_q.put((s_idx, ev, path))
+                    s_idx += 1
+
+                # Stream Claude — dispatch TTS per sentence as it arrives
                 with client.messages.stream(
                     model="claude-haiku-4-5-20251001",
                     max_tokens=300,
@@ -420,50 +489,69 @@ def _voice_loop(is_authorized: bool, incident: IncidentContext | None = None) ->
                     messages=history,
                 ) as stream:
                     for chunk in stream.text_stream:
-                        if not _voice_active:
+                        if not _active():
                             break
                         full_reply   += chunk
                         speak_buffer += chunk
-                        if speak_buffer.rstrip().endswith(_SENTENCE_ENDS) and len(speak_buffer.strip()) > 6:
-                            sentences.append(speak_buffer.strip())
+                        if (
+                            speak_buffer.rstrip().endswith(_SENTENCE_ENDS)
+                            and len(speak_buffer.strip()) > 6
+                        ):
+                            _queue_sentence(speak_buffer)
                             speak_buffer = ""
 
+                # Queue any trailing fragment (no trailing punctuation)
                 if speak_buffer.strip():
-                    sentences.append(speak_buffer.strip())
+                    _queue_sentence(speak_buffer)
 
                 reply = full_reply.strip()
-                if not _voice_active or not reply:
+                if not reply:
+                    continue
+
+                if not _active():
+                    # Drain and clean up any queued TTS jobs
+                    while not tts_q.empty():
+                        _, ev, path = tts_q.get_nowait()
+                        ev.wait(timeout=3.0)
+                        try: os.unlink(path)
+                        except: pass
                     break
 
                 history.append({"role": "assistant", "content": reply})
 
-                # Two-phase sync: dashboard shows "preparing audio" when TTS is
-                # done, then text appears together with audio after afplay buffers.
-                first_tts = True
-                first      = True
+                # Playback loop: dequeue in order, wait for each TTS, play
+                all_paths:    list[str] = []
+                first_played: bool      = False
 
-                def _on_tts_ready():
-                    nonlocal first_tts
-                    if first_tts:
-                        first_tts = False
+                for _ in range(s_idx):
+                    idx, ev, path = tts_q.get()
+                    all_paths.append(path)
+
+                    # Wait for this sentence's audio, bail fast if stopped
+                    while not ev.wait(timeout=0.05):
+                        if not _active():
+                            break
+
+                    if not _active():
+                        break
+
+                    if idx in tts_failed:
+                        continue
+
+                    if not first_played:
+                        first_played = True
+                        # Text and audio onset are simultaneous
                         _broadcast({"type": "voice_tts_ready", "timestamp": time.time()})
-
-                def _on_first_play():
-                    nonlocal first
-                    if first:
-                        first = False
                         _tx("assistant", reply)
 
-                for sentence in sentences:
-                    if not _voice_active:
-                        break
-                    clean = sentence.replace("*", "").replace("#", "")
-                    if clean:
-                        tts_cb  = _on_tts_ready  if first_tts else None
-                        play_cb = _on_first_play  if first     else None
-                        _speaker.speak(clean, _current_voice, _current_rate,
-                                       on_tts_ready=tts_cb, on_play_start=play_cb)
+                    _speaker.speak_file(path)
 
+                for p in all_paths:
+                    try: os.unlink(p)
+                    except: pass
+
+            except StopIteration:
+                break  # call was stopped mid-capture — exit cleanly
             except TimeoutError:
                 continue
             except sr.UnknownValueError:
@@ -487,16 +575,18 @@ def _voice_loop(is_authorized: bool, incident: IncidentContext | None = None) ->
         except Exception:
             pass
 
-    _tx("assistant", "Call ended.")
-    _voice_active = False
-    _broadcast({"type": "call_status", "callStatus": "idle", "timestamp": time.time()})
-    print("[Voice] loop exited")
+    # Only broadcast "Call ended" if this is still the active generation
+    if _call_generation == generation:
+        _tx("assistant", "Call ended.")
+        _voice_active = False
+        _broadcast({"type": "call_status", "callStatus": "idle", "timestamp": time.time()})
+    print(f"[Voice] loop exited (gen={generation})")
 
 
 @router.post("/call/start")
 async def start_call(payload: CallStartPayload):
     """Start a voice session. Returns {ok: false} if one is already running."""
-    global _voice_active, _current_lang, _current_voice, _current_stt_lang, \
+    global _voice_active, _call_generation, _current_lang, _current_voice, _current_stt_lang, \
            _current_rate, _current_speed_label, _current_energy_threshold, _current_pause_threshold
 
     if _voice_active:
@@ -510,10 +600,11 @@ async def start_call(payload: CallStartPayload):
     _current_energy_threshold = payload.sensitivity
     _current_pause_threshold  = payload.pause_after
 
+    _call_generation += 1
     _voice_active = True
-    threading.Thread(target=_voice_loop, args=(payload.is_authorized, payload.incident), daemon=True).start()
+    threading.Thread(target=_voice_loop, args=(payload.is_authorized, payload.incident, _call_generation), daemon=True).start()
     _broadcast({"type": "call_status", "callStatus": "active", "timestamp": time.time()})
-    print(f"[Voice] call started — lang={payload.language} speed={payload.speed} authorized={payload.is_authorized}")
+    print(f"[Voice] call started — gen={_call_generation} lang={payload.language} speed={payload.speed} authorized={payload.is_authorized}")
     return {"ok": True}
 
 
@@ -526,6 +617,13 @@ async def stop_call():
     _speaker.stop()
     _broadcast({"type": "call_status", "callStatus": "idle", "timestamp": time.time()})
     print("[Voice] call stopped")
+    return {"ok": True}
+
+
+@router.post("/call/interrupt")
+async def interrupt_speech():
+    """Kill current audio playback immediately — call stays active, mic resumes next cycle."""
+    _speaker.stop()
     return {"ok": True}
 
 

@@ -9,9 +9,9 @@
 
 export const colors = {
   // ── Backgrounds ─────────────────────────────────────────────────
-  page: "#0a0c10", // outermost page background
-  surface: "#111318", // card / panel background
-  elevated: "#161b24", // modals, tooltips
+  page: "#000000", // outermost page background
+  surface: "#040d12", // card / panel background
+  elevated: "#1e1e1e", // modals, tooltips
 
   // ── Borders ─────────────────────────────────────────────────────
   line: "#1e2229", // default border
@@ -28,8 +28,9 @@ export const colors = {
   info: "#3b82f6", // acknowledged, primary action
   infoDark: "#2563eb", // hover state for info buttons
   infoLight: "#60a5fa", // subtle info links/hover
-  accent: "#8b5cf6", // on-scene, admin role, AI chat
+  accent: "#c1ff72", // on-scene, admin role, AI chat
   accentDark: "#7c3aed", // hover for accent
+  accentLight: "#faf6f0", // subtle accent bg
 } as const;
 
 export type ColorKey = keyof typeof colors;

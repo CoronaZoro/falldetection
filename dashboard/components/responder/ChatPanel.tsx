@@ -6,14 +6,37 @@ import {
   MicOff,
   Phone,
   PhoneOff,
-  Bot,
   User,
   ShieldCheck,
   ShieldOff,
   AlertTriangle,
   Lock,
   Volume2,
+  Square,
 } from "lucide-react";
+
+function ChessKnight({ size = 16 }: { size?: number }) {
+  return (
+    <svg
+      xmlns='http://www.w3.org/2000/svg'
+      width='16'
+      height='16'
+      viewBox='0 0 24 24'
+      fill='none'
+      stroke='currentColor'
+      stroke-width='1'
+      stroke-linecap='round'
+      stroke-linejoin='round'
+      className='lucide lucide-chess-knight-icon lucide-chess-knight text-accent'
+    >
+      <path d='M5 20a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1z' />
+      <path d='M16.5 18c1-2 2.5-5 2.5-9a7 7 0 0 0-7-7H6.635a1 1 0 0 0-.768 1.64L7 5l-2.32 5.802a2 2 0 0 0 .95 2.526l2.87 1.456' />
+      <path d='m15 5 1.425-1.425' />
+      <path d='m17 8 1.53-1.53' />
+      <path d='M9.713 12.185 7 18' />
+    </svg>
+  );
+}
 import type { VoiceEntry } from "@/types";
 
 const LANGUAGES = ["English", "Thai", "Japanese", "Chinese"] as const;
@@ -94,6 +117,8 @@ interface Props {
   micSpeaking: boolean;
   micMuted: boolean;
   onToggleMute: () => Promise<void>;
+  isSpeakingAudio: boolean;
+  onStopSpeech: () => Promise<void>;
 }
 
 const Chevron = () => (
@@ -131,6 +156,8 @@ export default function ChatPanel({
   micSpeaking,
   micMuted,
   onToggleMute,
+  isSpeakingAudio,
+  onStopSpeech,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -233,7 +260,7 @@ export default function ChatPanel({
       <div className='shrink-0 flex items-center justify-between px-3 py-2 border-b border-line bg-elevated/40'>
         <div className='flex items-center gap-3 py-1 rounded-md'>
           <div className='w-6 h-6 rounded-full bg-accent/15 border border-accent/25 flex items-center justify-center'>
-            <Bot size={16} className='text-accent' />
+            <ChessKnight size={16} />
           </div>
           <span className='text-[16px] font-semibold text-fg/70 tracking-wide uppercase'>
             Paladin
@@ -277,7 +304,7 @@ export default function ChatPanel({
       {!incidentUnlocked ? (
         <div className='flex-1 flex flex-col items-center justify-center gap-3 px-5 text-center bg-page'>
           <div className='w-11 h-11 rounded-full flex items-center justify-center border-1 border-line/50 bg-line/30'>
-            <Lock size={15} className='text-fg-muted/50' />
+            <ChessKnight size={20} />
           </div>
           <div>
             <p className='text-xs font-semibold text-fg/70'>
@@ -391,7 +418,7 @@ export default function ChatPanel({
             {/* Header */}
 
             {/* Transcription */}
-            <div className='px-3.5 py-3 flex flex-col gap-1.5'>
+            <div className='px-3.5 py-2 flex flex-col gap-1.5'>
               <div className='flex gap-1.5 justify-evenly'>
                 <div className='max-w-[75px] flex-1 flex flex-col gap-1 '>
                   <label className='text-[10px] text-fg/60 pl-2'>
@@ -484,34 +511,47 @@ export default function ChatPanel({
               ? entry.text.slice(0, displayedLen)
               : entry.text;
             const isUser = entry.speaker === "user";
+            const isLastAssistantSpeaking =
+              !isUser && i === transcript.length - 1 && isSpeakingAudio;
 
             return (
               <div
                 key={i}
-                className={`flex gap-1.5 items-end ${isUser ? "justify-end" : ""}`}
+                className={`flex gap-1.5 ${isUser ? "items-end justify-end" : "items-start"}`}
               >
                 {!isUser && (
-                  <div className='w-5 h-5 rounded-full bg-accent/15 border border-accent/25 flex items-center justify-center shrink-0 mb-0.5'>
-                    <Bot size={9} className='text-accent' />
+                  <div className='w-5 h-5 rounded-full bg-accent/15 border border-accent/25 flex items-center justify-center shrink-0 mt-0.5'>
+                    <ChessKnight size={9} />
                   </div>
                 )}
-                <div
-                  className={`text-[11px] leading-relaxed text-fg px-2.5 py-1.5 max-w-[85%] ${
-                    isUser
-                      ? "bg-info/15 border border-info/20 rounded-2xl rounded-br-sm"
-                      : "bg-elevated border border-line rounded-2xl rounded-bl-sm"
-                  }`}
-                >
-                  {text}
-                  {isAnimating && (
-                    <span
-                      className='inline-block w-[2px] h-3 ml-0.5 rounded-full animate-pulse align-middle'
-                      style={{
-                        background: isUser
-                          ? "var(--color-info)"
-                          : "var(--color-accent)",
-                      }}
-                    />
+                <div className='flex flex-col gap-1 max-w-[85%]'>
+                  <div
+                    className={`text-[11px] leading-relaxed text-fg px-2.5 py-1.5 ${
+                      isUser
+                        ? "bg-info/15 border border-info/20 rounded-2xl rounded-br-sm"
+                        : "bg-elevated border border-line rounded-2xl rounded-bl-sm"
+                    }`}
+                  >
+                    {text}
+                    {isAnimating && (
+                      <span
+                        className='inline-block w-[2px] h-3 ml-0.5 rounded-full animate-pulse align-middle'
+                        style={{
+                          background: isUser
+                            ? "var(--color-info)"
+                            : "var(--color-accent)",
+                        }}
+                      />
+                    )}
+                  </div>
+                  {isLastAssistantSpeaking && (
+                    <button
+                      onClick={onStopSpeech}
+                      className='self-start flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] text-fg-muted/50 hover:text-danger/80 hover:bg-danger/8 border border-transparent hover:border-danger/20 transition-all cursor-pointer'
+                    >
+                      <Square size={7} fill='currentColor' />
+                      stop
+                    </button>
                   )}
                 </div>
                 {isUser && (
@@ -526,7 +566,7 @@ export default function ChatPanel({
           {isThinking && (
             <div className='flex gap-1.5 items-end'>
               <div className='w-5 h-5 rounded-full bg-accent/15 border border-accent/25 flex items-center justify-center shrink-0'>
-                <Bot size={9} className='text-accent' />
+                <ChessKnight size={9} />
               </div>
               <div className='bg-elevated border border-line rounded-2xl rounded-bl-sm px-3 py-2'>
                 <ThinkingDots />
@@ -537,7 +577,7 @@ export default function ChatPanel({
           {isPreparingAudio && !isThinking && (
             <div className='flex gap-1.5 items-end'>
               <div className='w-5 h-5 rounded-full bg-accent/15 border border-accent/25 flex items-center justify-center shrink-0'>
-                <Bot size={9} className='text-accent' />
+                <ChessKnight size={9} />
               </div>
               <div className='bg-elevated border border-line rounded-2xl rounded-bl-sm px-2.5 py-1.5 flex items-center gap-1.5'>
                 <Volume2 size={10} className='text-accent animate-pulse' />
@@ -716,52 +756,106 @@ export default function ChatPanel({
               {/* Row 2: language + speed + sensitivity + pause */}
             </div>
           ) : hasTranscript ? (
-            /* ── Idle with history: restart row ────────────────────────── */
-            <div className='flex items-center gap-1.5'>
-              <div className='relative flex-1'>
-                <select
-                  value={localLang}
-                  onChange={(e) => setLocalLang(e.target.value as Language)}
-                  className='w-full appearance-none bg-page border border-line rounded-md pl-2 pr-6 py-1.5 text-[10px] text-fg outline-none focus:border-info transition-colors cursor-pointer'
-                >
-                  {LANGUAGES.map((l) => (
-                    <option key={l} value={l}>
-                      {l}
-                    </option>
-                  ))}
-                </select>
-                <Chevron />
+            /* ── Idle with history: full settings + new call ───────────── */
+            <div className='flex gap-1.5 items-end py-1'>
+              <div className='flex-1 flex justify-between gap-0 overflow-hidden bg-surface rounded-lg'>
+                <div className='flex gap-1.5 justify-evenly w-full max-w-lg mx-auto'>
+                  <div className='max-w-[75px] flex-1 flex flex-col gap-1'>
+                    <label className='text-[10px] text-fg/60 pl-2'>
+                      Language
+                    </label>
+                    <div className='relative'>
+                      <select
+                        value={localLang}
+                        onChange={(e) =>
+                          setLocalLang(e.target.value as Language)
+                        }
+                        className='w-full appearance-none rounded-md pl-2 pr-6 py-1.5 text-[11px] text-fg hover:bg-page outline-none focus:border-info transition-colors cursor-pointer'
+                      >
+                        {LANGUAGES.map((l) => (
+                          <option key={l} value={l}>
+                            {l}
+                          </option>
+                        ))}
+                      </select>
+                      <Chevron />
+                    </div>
+                  </div>
+                  <div className='max-w-[70px] flex-1 flex flex-col gap-1'>
+                    <label className='text-[10px] text-fg/60 pl-2'>Speed</label>
+                    <div className='relative'>
+                      <select
+                        value={localSpeed}
+                        onChange={(e) => setLocalSpeed(e.target.value as Speed)}
+                        className='w-full appearance-none rounded-md pl-2 pr-6 py-1.5 text-[11px] text-fg hover:bg-page outline-none focus:border-info transition-colors cursor-pointer'
+                      >
+                        {SPEEDS.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                      <Chevron />
+                    </div>
+                  </div>
+                  <div className='flex-1 flex flex-col gap-1 max-w-[220px]'>
+                    <label className='text-[10px] text-fg/60 pl-2'>
+                      VAD Sensitivity
+                    </label>
+                    <div className='relative'>
+                      <select
+                        value={localSens}
+                        onChange={(e) =>
+                          setLocalSens(e.target.value as Sensitivity)
+                        }
+                        className='w-full appearance-none rounded-md pl-2 pr-6 py-1.5 text-[11px] text-fg hover:bg-page outline-none focus:border-info transition-colors cursor-pointer'
+                      >
+                        {SENSITIVITIES.map((s) => (
+                          <option key={s} value={s}>
+                            <em>{s}</em> : {SENSITIVITY_HINT[s]}
+                          </option>
+                        ))}
+                      </select>
+                      <Chevron />
+                    </div>
+                  </div>
+                  <div className='max-w-[70px] flex-1 flex flex-col gap-1'>
+                    <label className='text-[10px] text-fg/60 pl-2'>Pause</label>
+                    <div className='relative'>
+                      <select
+                        value={localPause}
+                        onChange={(e) => setLocalPause(e.target.value as Pause)}
+                        className='w-full appearance-none rounded-md pl-2 pr-6 py-1.5 text-[11px] text-fg hover:bg-page outline-none focus:border-info transition-colors cursor-pointer'
+                      >
+                        {PAUSES.map((p) => (
+                          <option key={p} value={p}>
+                            {p}
+                          </option>
+                        ))}
+                      </select>
+                      <Chevron />
+                    </div>
+                  </div>
+                </div>
+                <div className='flex items-center justify-center mt-3'>
+                  <button
+                    onClick={() =>
+                      onCallStart(
+                        localLang,
+                        localSpeed,
+                        SENSITIVITY_MAP[localSens],
+                        PAUSE_MAP[localPause],
+                      )
+                    }
+                    className='shrink-0 flex items-center gap-1.5 bg-success/12 hover:bg-success/22 border border-success/30 rounded-full px-3 py-1 cursor-pointer transition-all active:scale-95'
+                  >
+                    <Phone size={10} className='text-success' />
+                    <span className='text-[10px] font-semibold text-success'>
+                      New Call
+                    </span>
+                  </button>
+                </div>
               </div>
-              <div className='relative w-[80px] shrink-0'>
-                <select
-                  value={localSpeed}
-                  onChange={(e) => setLocalSpeed(e.target.value as Speed)}
-                  className='w-full appearance-none bg-page border border-line rounded-md pl-2 pr-6 py-1.5 text-[10px] font-mono text-fg outline-none focus:border-info transition-colors cursor-pointer'
-                >
-                  {SPEEDS.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-                <Chevron />
-              </div>
-              <button
-                onClick={() =>
-                  onCallStart(
-                    localLang,
-                    localSpeed,
-                    SENSITIVITY_MAP[localSens],
-                    PAUSE_MAP[localPause],
-                  )
-                }
-                className='flex items-center gap-1.5 bg-success/12 hover:bg-success/22 border border-success/30 rounded-full px-3 py-1.5 cursor-pointer transition-all active:scale-95'
-              >
-                <Phone size={10} className='text-success' />
-                <span className='text-[10px] font-semibold text-success'>
-                  New Call
-                </span>
-              </button>
             </div>
           ) : (
             /* ── Idle, no history ──────────────────────────────────────── */
