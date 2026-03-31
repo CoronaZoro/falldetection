@@ -163,7 +163,7 @@ export default function ChatPanel({
 
   const [localLang, setLocalLang] = useState<Language>(language);
   const [localSpeed, setLocalSpeed] = useState<Speed>(speed);
-  const [localSens, setLocalSens] = useState<Sensitivity>("Balanced");
+  const [localSens, setLocalSens] = useState<Sensitivity>("Strict");
   const [localPause, setLocalPause] = useState<Pause>("1.2s");
 
   const [animatingTs, setAnimatingTs] = useState<number | null>(null);

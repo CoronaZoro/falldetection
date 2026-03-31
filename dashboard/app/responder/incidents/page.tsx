@@ -37,80 +37,71 @@ export default function ResponderIncidentsPage() {
       </div>
 
       {/* Table — fills remaining height, scrolls inside */}
-      <div className='flex-1 min-h-0 bg-surface border border-line rounded overflow-hidden flex flex-col'>
-        {/* Sticky thead wrapper */}
-        <div className='shrink-0 overflow-x-auto border-b border-line'>
-          <table className='w-full border-collapse text-xs'>
-            <thead>
+      <div className='flex-1 min-h-0 bg-surface border border-line rounded overflow-hidden overflow-y-auto'>
+        <table className='w-full border-collapse text-xs'>
+          <thead>
+            <tr className='border-b border-line'>
+              {["Time", "Type", "Duration", "AR", "Response", "Status", ""].map((h) => (
+                <th key={h} className='py-2.5 px-3 text-left section-label whitespace-nowrap sticky top-0 bg-surface z-10'>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
               <tr>
-                {["Time", "Type", "Duration", "AR", "Response", "Status", ""].map((h) => (
-                  <th key={h} className='py-2.5 px-3 text-left section-label whitespace-nowrap'>
-                    {h}
-                  </th>
-                ))}
+                <td colSpan={7} className='py-12 text-center text-fg-muted'>
+                  Loading…
+                </td>
               </tr>
-            </thead>
-          </table>
-        </div>
-
-        {/* Scrollable body */}
-        <div className='flex-1 min-h-0 overflow-y-auto overflow-x-auto'>
-          <table className='w-full border-collapse text-xs'>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={7} className='py-12 text-center text-fg-muted'>
-                    Loading…
-                  </td>
-                </tr>
-              ) : incidents.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className='py-12 text-center text-fg-muted'>
-                    No incidents yet
-                  </td>
-                </tr>
-              ) : (
-                incidents.map((inc) => {
-                  const rt = inc.acknowledgedAt
-                    ? `${Math.round(
-                        (new Date(inc.acknowledgedAt).getTime() - new Date(inc.createdAt).getTime()) / 1000,
-                      )}s`
-                    : "—";
-                  return (
-                    <tr key={inc.id} className='border-b border-line hover:bg-elevated/40 transition-colors'>
-                      <td className='py-2.5 px-3 text-fg-muted font-mono whitespace-nowrap text-[11px]'>
-                        {new Date(inc.createdAt).toLocaleString()}
-                      </td>
-                      <td className='py-2.5 px-3'>
-                        <StatusBadge status={inc.type} />
-                      </td>
-                      <td className='py-2.5 px-3 text-fg font-mono text-[11px]'>
-                        {inc.downDuration.toFixed(1)}s
-                      </td>
-                      <td className='py-2.5 px-3 text-fg font-mono text-[11px]'>
-                        {inc.ar.toFixed(2)}
-                      </td>
-                      <td className='py-2.5 px-3 text-fg font-mono text-[11px]'>
-                        {rt}
-                      </td>
-                      <td className='py-2.5 px-3'>
-                        <StatusBadge status={inc.status} />
-                      </td>
-                      <td className='py-2.5 px-3'>
-                        <Link
-                          href={`/responder/incidents/${inc.id}`}
-                          className='text-info flex items-center hover:text-info-light transition-colors'
-                        >
-                          <ExternalLink size={13} />
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+            ) : incidents.length === 0 ? (
+              <tr>
+                <td colSpan={7} className='py-12 text-center text-fg-muted'>
+                  No incidents yet
+                </td>
+              </tr>
+            ) : (
+              incidents.map((inc) => {
+                const rt = inc.acknowledgedAt
+                  ? `${Math.round(
+                      (new Date(inc.acknowledgedAt).getTime() - new Date(inc.createdAt).getTime()) / 1000,
+                    )}s`
+                  : "—";
+                return (
+                  <tr key={inc.id} className='border-b border-line hover:bg-elevated/40 transition-colors'>
+                    <td className='py-2.5 px-3 text-fg-muted font-mono whitespace-nowrap text-[11px]'>
+                      {new Date(inc.createdAt).toLocaleString()}
+                    </td>
+                    <td className='py-2.5 px-3'>
+                      <StatusBadge status={inc.type} />
+                    </td>
+                    <td className='py-2.5 px-3 text-fg font-mono text-[11px]'>
+                      {inc.downDuration.toFixed(1)}s
+                    </td>
+                    <td className='py-2.5 px-3 text-fg font-mono text-[11px]'>
+                      {inc.ar.toFixed(2)}
+                    </td>
+                    <td className='py-2.5 px-3 text-fg font-mono text-[11px]'>
+                      {rt}
+                    </td>
+                    <td className='py-2.5 px-3'>
+                      <StatusBadge status={inc.status} />
+                    </td>
+                    <td className='py-2.5 px-3'>
+                      <Link
+                        href={`/responder/incidents/${inc.id}`}
+                        className='text-info flex items-center hover:text-info-light transition-colors'
+                      >
+                        <ExternalLink size={13} />
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );

@@ -57,7 +57,10 @@ BEHAVIOR:
 5. Keep initial responses under 50 words. Detailed follow-ups under 150 words.
 6. Do NOT use markdown, bullet points, asterisks, em dashes, or numbered lists.
    Write in plain flowing sentences — this will be spoken aloud.
-7. If the user asks for emergency contact info, provide the nearest hospital contact infos in the area. When pronouncing emergency numbers, speak the numbers one by one but write them out in numerals without spaces."""
+7. If the user asks for emergency contact info, provide the nearest hospital contact infos 
+        PatRangsit Hospital: 02-998-9999,
+        Thammasat University Hospital: 02-926-9999,
+        Rangsit Hospital: 02-150-0200. When pronouncing emergency numbers, speak the numbers one by one but write them out in numerals without spaces."""
 
 _UNAUTHORIZED_PROMPT = """You are an emergency voice assistant integrated into a fall detection system.
 Location of incident: {location}
@@ -122,7 +125,7 @@ _current_voice:            str   = _EDGE_VOICE_MAP["English"]
 _current_stt_lang:         str   = _STT_LANG_MAP["English"]
 _current_rate:             str   = _DEFAULT_RATE
 _current_speed_label:      str   = "1x"
-_current_energy_threshold: int   = 300
+_current_energy_threshold: int   = 1200
 _current_pause_threshold:  float = 1.2
 
 

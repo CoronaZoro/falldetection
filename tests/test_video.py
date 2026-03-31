@@ -72,13 +72,20 @@ logic.RECOVERY_LABEL_TIME = cfg["recoveryLabelTime"]
 logic.MOVEMENT_THRESHOLD  = cfg["movementThreshold"]
 
 CAMERA_INDEX = get_config()["cameraIndex"]
-cap = cv2.VideoCapture(CAMERA_INDEX)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1280)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+
+def _open_camera(index: int) -> cv2.VideoCapture:
+    cap = cv2.VideoCapture(index)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    return cap
+
+cap = _open_camera(CAMERA_INDEX)
 
 alerted_persons: set  = set()
 last_heartbeat        = 0.0
 last_broadcast_state  = STABLE   # track to fire state_update only on change
+_consecutive_failures = 0
+_MAX_FAILURES         = 30       # ~1 s at 30 fps before reconnect attempt
 
 # Create window explicitly so macOS gives it proper keyboard focus
 cv2.namedWindow("Test Camera", cv2.WINDOW_NORMAL)
@@ -87,8 +94,21 @@ print("Starting webcam... Press Q to quit\n")
 
 while True:
     ret, frame = cap.read()
+
+    # ── Camera dropout: retry with reconnect ─────────────────
     if not ret:
-        break
+        _consecutive_failures += 1
+        if _consecutive_failures >= _MAX_FAILURES:
+            print(f"[Camera] {_consecutive_failures} consecutive read failures — reconnecting…")
+            cap.release()
+            time.sleep(1.0)
+            cap = _open_camera(CAMERA_INDEX)
+            _consecutive_failures = 0
+            if not cap.isOpened():
+                print("[Camera] Reconnect failed — retrying in 3 s…")
+                time.sleep(3.0)
+        continue
+    _consecutive_failures = 0
 
     h, w = frame.shape[:2]
     now  = time.time()
@@ -112,7 +132,11 @@ while True:
         )
 
     # ── Run MediaPipe pose analysis ───────────────────────────
-    pose_signals = pose_analyzer.analyze(frame, person_boxes) if preds else {}
+    try:
+        pose_signals = pose_analyzer.analyze(frame, person_boxes) if preds else {}
+    except Exception as exc:
+        print(f"[Pose]  {exc}")
+        pose_signals = {}
 
     # ── Read visualizer flags (live-toggleable from dashboard) ─
     viz = get_viz_flags()
@@ -134,8 +158,12 @@ while True:
         pose       = pose_signals.get(i)
 
         # ── Run combined state machine ────────────────────────
-        fall_result   = logic.update(i, label, (x1, y1, x2, y2), pose=pose)
-        current_state = fall_result["state"]
+        try:
+            fall_result   = logic.update(i, label, (x1, y1, x2, y2), pose=pose)
+            current_state = fall_result["state"]
+        except Exception as exc:
+            print(f"[FallLogic] person {i}: {exc}")
+            continue
 
         # ── Broadcast fall alert (once per person per incident)
         if fall_result["is_alarm"]:
@@ -220,13 +248,20 @@ while True:
                         (10, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (180, 180, 180), 1)
 
     # ── Push annotated frame to MJPEG stream ─────────────────
-    _, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-    update_frame(jpeg.tobytes())
+    try:
+        _, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        update_frame(jpeg.tobytes())
+    except Exception as exc:
+        print(f"[Frame encode] {exc}")
 
     cv2.imshow("Test Camera", frame)
     key = cv2.waitKey(1) & 0xFF
     # Q key or window close button (WND_PROP_VISIBLE drops to 0)
-    if key == ord("q") or key == 27 or cv2.getWindowProperty("Test Camera", cv2.WND_PROP_VISIBLE) < 1:
+    try:
+        window_closed = cv2.getWindowProperty("Test Camera", cv2.WND_PROP_VISIBLE) < 1
+    except Exception:
+        window_closed = False
+    if key == ord("q") or key == 27 or window_closed:
         break
 
 cap.release()
