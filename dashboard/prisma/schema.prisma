@@ -33,6 +33,7 @@ model Incident {
   personId        Int
   ar              Float
   downDuration    Float
+  velocity        Float                @default(0)
   status          IncidentStatus       @default(UNACKNOWLEDGED)
   acknowledgedBy  String?
   acknowledgedAt  DateTime?

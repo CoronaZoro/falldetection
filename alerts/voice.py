@@ -206,12 +206,28 @@ class InterruptibleSpeaker:
 _speaker = InterruptibleSpeaker()
 
 
+class IncidentLogEntry(BaseModel):
+    type:      str = ""
+    message:   str = ""
+    timestamp: str = ""
+
+
+class IncidentTranscriptEntry(BaseModel):
+    speaker:   str = ""
+    text:      str = ""
+
+
 class IncidentContext(BaseModel):
-    type:          str   = ""
-    person_id:     int   = 0
-    ar:            float = 0.0
-    down_duration: float = 0.0
-    status:        str   = "UNACKNOWLEDGED"
+    type:             str                          = ""
+    person_id:        int                          = 0
+    ar:               float                        = 0.0
+    down_duration:    float                        = 0.0
+    status:           str                          = "UNACKNOWLEDGED"
+    notes:            str                          = ""
+    detected_at:      str                          = ""   # ISO / Unix timestamp string from WS
+    fall_velocity:    float                        = 0.0  # hip velocity at fall moment (norm/s)
+    logs:             list[IncidentLogEntry]       = []
+    prev_transcripts: list[IncidentTranscriptEntry] = []
 
 
 class CallStartPayload(BaseModel):
@@ -231,24 +247,74 @@ class CallSettingsPayload(BaseModel):
 
 
 def _build_incident_block(incident: IncidentContext | None) -> str:
-    """Build a plain-text incident summary to prepend to the system prompt."""
+    """Build a full incident context block to prepend to the system prompt."""
     if not incident or incident.type != "FALL":
         return ""
 
-    ar_risk  = "HIGH" if incident.ar < 0.5 else "MODERATE" if incident.ar < 0.7 else "LOW"
-    dur_risk = "CRITICAL" if incident.down_duration >= 30 else "HIGH" if incident.down_duration >= 10 else "MODERATE"
+    import datetime as _dt
 
-    return "\n".join([
-        "CURRENT INCIDENT:",
-        "- Type: FALL DETECTED",
-        f"- Person ID: {incident.person_id}",
-        f"- Aspect Ratio (AR): {incident.ar:.2f} — lower means more horizontal. Risk: {ar_risk}",
-        f"- Time on ground: {incident.down_duration:.1f}s. Risk: {dur_risk}",
-        f"- Status: {incident.status}",
+    ar_risk  = "HIGH"     if incident.ar < 0.5            else "MODERATE" if incident.ar < 0.7            else "LOW"
+    dur_risk = "CRITICAL" if incident.down_duration >= 30 else "HIGH"     if incident.down_duration >= 10 else "MODERATE"
+
+    # Resolve detected_at → human-readable local time
+    detected_at_str = "unknown"
+    if incident.detected_at:
+        try:
+            ts_val = float(incident.detected_at)
+            detected_at_str = _dt.datetime.fromtimestamp(ts_val).strftime("%Y-%m-%d %H:%M:%S")
+        except (ValueError, OSError):
+            # Already an ISO string or other format — use as-is
+            detected_at_str = incident.detected_at[:19].replace("T", " ")
+
+    # Velocity severity label
+    vel = incident.fall_velocity
+    if vel >= 0.8:
+        vel_risk = "SEVERE — very fast impact, high injury risk"
+    elif vel >= 0.5:
+        vel_risk = "HIGH — fast fall, possible injury"
+    elif vel >= 0.3:
+        vel_risk = "MODERATE — clear fall motion"
+    elif vel > 0.0:
+        vel_risk = "LOW — slow descent"
+    else:
+        vel_risk = "unknown (no skeleton data)"
+
+    lines = [
+        "━━━ INCIDENT CONTEXT ━━━",
+        f"Type:             FALL DETECTED",
+        f"Person ID:        {incident.person_id}",
+        f"Detected at:      {detected_at_str}",
+        f"Aspect Ratio:     {incident.ar:.2f}  (lower = more horizontal — risk: {ar_risk})",
+        f"Time on ground:   {incident.down_duration:.1f}s  (risk: {dur_risk})",
+        f"Fall velocity:    {vel:.3f} norm/s — {vel_risk}",
+        f"Current status:   {incident.status}",
+    ]
+
+    if incident.notes:
+        lines.append(f"Responder notes:  {incident.notes}")
+
+    if incident.logs:
+        lines.append("")
+        lines.append("━━━ INCIDENT TIMELINE ━━━")
+        for log in incident.logs[-25:]:
+            ts = log.timestamp[:19].replace("T", " ") if log.timestamp else ""
+            lines.append(f"  [{ts}]  {log.message}")
+
+    if incident.prev_transcripts:
+        lines.append("")
+        lines.append("━━━ PREVIOUS VOICE EXCHANGES ━━━")
+        for t in incident.prev_transcripts[-40:]:
+            speaker = "Assistant" if t.speaker == "assistant" else "Responder"
+            lines.append(f"  {speaker}: {t.text}")
+
+    lines += [
         "",
-        "Use this to answer 'what happened?', 'how serious?', or 'what should I check first?'.",
+        "Use all of the above to answer questions accurately.",
         "Prioritise airway, breathing, circulation. Very low AR means person is likely fully flat.",
-    ])
+        "High fall velocity (≥0.5) suggests rapid impact — flag potential physical injury.",
+    ]
+
+    return "\n".join(lines)
 
 
 def _capture_utterance(

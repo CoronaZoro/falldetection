@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
-  const { eventId, type, personId, ar, downDuration } = body;
+  const { eventId, type, personId, ar, downDuration, velocity } = body;
 
   // Upsert to avoid duplicates from race conditions
   const incident = await prisma.incident.upsert({
@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
       personId: personId ?? 0,
       ar: ar ?? 0,
       downDuration: downDuration ?? 0,
+      velocity: velocity ?? 0,
       status: "UNACKNOWLEDGED",
     },
   });

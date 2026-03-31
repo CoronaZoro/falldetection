@@ -89,6 +89,7 @@ class FallLogic:
                 "last_cx":             cx,
                 "last_cy":             cy,
                 "final_down_duration": 0.0,   # captured on RECOVERY before down_since clears
+                "hip_velocity":        0.0,   # velocity at moment of fall classification
             }
 
         s          = self.states[person_id]
@@ -141,12 +142,16 @@ class FallLogic:
             if s["down_since"] is None:
                 # ── First "down" frame — velocity-first discrimination ─────
                 s["down_since"] = now
+                # Capture hip velocity at the moment of fall classification
+                if pose and pose.get("visible") and pose.get("hip_velocity") is not None:
+                    s["hip_velocity"] = round(abs(pose["hip_velocity"]), 3)
                 verdict, reason = self._classify(pose, now, s)
 
                 if verdict == "sleep":
                     s["state"]      = SLEEPING
                     s["reason"]     = reason
                     s["down_since"] = None
+                    s["hip_velocity"] = 0.0
                     print(f"[FallLogic] Person {person_id} sleeping — {reason}")
                 else:
                     s["state"]  = TRANSITION
@@ -283,4 +288,5 @@ class FallLogic:
             "is_recovery":   s["state"] == RECOVERY,
             "aspect_ratio":  round(ar, 2),
             "down_duration": down_dur,
+            "hip_velocity":  s.get("hip_velocity", 0.0),
         }

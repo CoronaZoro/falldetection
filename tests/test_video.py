@@ -80,6 +80,9 @@ alerted_persons: set  = set()
 last_heartbeat        = 0.0
 last_broadcast_state  = STABLE   # track to fire state_update only on change
 
+# Create window explicitly so macOS gives it proper keyboard focus
+cv2.namedWindow("Test Camera", cv2.WINDOW_NORMAL)
+
 print("Starting webcam... Press Q to quit\n")
 
 while True:
@@ -143,6 +146,7 @@ while True:
                     person_id     = i,
                     ar            = fall_result["aspect_ratio"],
                     down_duration = fall_result["down_duration"],
+                    velocity      = fall_result.get("hip_velocity", 0.0),
                 )
 
         # ── Broadcast recovery ────────────────────────────────
@@ -220,7 +224,9 @@ while True:
     update_frame(jpeg.tobytes())
 
     cv2.imshow("Test Camera", frame)
-    if cv2.waitKey(1) & 0xFF == ord("q"):
+    key = cv2.waitKey(1) & 0xFF
+    # Q key or window close button (WND_PROP_VISIBLE drops to 0)
+    if key == ord("q") or key == 27 or cv2.getWindowProperty("Test Camera", cv2.WND_PROP_VISIBLE) < 1:
         break
 
 cap.release()

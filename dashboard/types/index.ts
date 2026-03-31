@@ -17,6 +17,7 @@ export interface WSMessage {
   state?: string;
   ar?: number;
   down_duration?: number;
+  velocity?: number;                  // hip velocity at fall moment (norm/s) — fall_alert only
   message?: string;
   speaker?: "user" | "assistant";
   mid?: number;                       // voice_alert dedup ID
@@ -46,6 +47,7 @@ export interface Incident {
   personId: number;
   ar: number;
   downDuration: number;
+  velocity: number;
   status: IncidentStatus;
   acknowledgedBy: string | null;
   acknowledgedAt: Date | null;

@@ -177,7 +177,7 @@ def update_frame(jpeg_bytes: bytes) -> None:
     latest_frame = jpeg_bytes
 
 
-def broadcast_fall(person_id: int, ar: float, down_duration: float) -> None:
+def broadcast_fall(person_id: int, ar: float, down_duration: float, velocity: float = 0.0) -> None:
     event_id  = f"fall_{int(time.time() * 1000)}"
     fall_time = time.time()
     _broadcast({
@@ -188,6 +188,7 @@ def broadcast_fall(person_id: int, ar: float, down_duration: float) -> None:
         "state":         "ALARM",
         "ar":            round(ar, 2),
         "down_duration": down_duration,
+        "velocity":      round(velocity, 3),
     })
     timer = threading.Timer(_config["escalationSeconds"], _escalate, args=(event_id,))
     timer.daemon = True
@@ -198,9 +199,10 @@ def broadcast_fall(person_id: int, ar: float, down_duration: float) -> None:
         "person_id":     person_id,
         "ar":            round(ar, 2),
         "down_duration": down_duration,
+        "velocity":      round(velocity, 3),
     }
     _person_to_event[person_id] = event_id
-    print(f"[Server] fall alert sent: {event_id}")
+    print(f"[Server] fall alert sent: {event_id}  velocity={velocity:.3f}")
 
 
 def broadcast_recovery(person_id: int, down_duration: float = 0.0) -> None:
@@ -254,13 +256,14 @@ class DebugFallPayload(BaseModel):
     person_id: int = 0
     ar: float = 0.35
     down_duration: float = 3.0
+    velocity: float = 0.0
 
 
 @app.post("/debug/fall")
 async def debug_fall(payload: DebugFallPayload):
     """Manually trigger a fall alert (for testing)."""
-    broadcast_fall(payload.person_id, payload.ar, payload.down_duration)
-    return {"ok": True, "person_id": payload.person_id, "ar": payload.ar, "down_duration": payload.down_duration}
+    broadcast_fall(payload.person_id, payload.ar, payload.down_duration, payload.velocity)
+    return {"ok": True, "person_id": payload.person_id, "ar": payload.ar, "down_duration": payload.down_duration, "velocity": payload.velocity}
 
 
 @app.post("/debug/recovery")

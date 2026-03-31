@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import StatusBadge from "@/components/StatusBadge";
 import {
@@ -15,6 +15,8 @@ import {
   Activity,
   Bot,
   User,
+  ChevronDown,
+  Download,
 } from "lucide-react";
 import { colors, rgba } from "@/lib/colors";
 
@@ -80,6 +82,8 @@ export default function IncidentDetailClient({ id, role }: Props) {
   const [notes, setNotes] = useState("");
   const [genReport, setGenReport] = useState(false);
   const [tab, setTab] = useState<Tab>("timeline");
+  const [dlOpen, setDlOpen] = useState(false);
+  const dlRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetch(`/api/incidents/${id}`)
@@ -111,6 +115,95 @@ export default function IncidentDetailClient({ id, role }: Props) {
     );
     setGenReport(false);
   }
+
+  function downloadTxt() {
+    if (!incident?.reportText) return;
+    const blob = new Blob([incident.reportText], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `guardian-handover-${incident.eventId}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setDlOpen(false);
+  }
+
+  async function downloadPdf() {
+    if (!incident?.reportText) return;
+    setDlOpen(false);
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+    const W = doc.internal.pageSize.getWidth();
+    const H = doc.internal.pageSize.getHeight();
+    const MARGIN = 48;
+    const CONTENT_W = W - MARGIN * 2;
+
+    // ── Header bar ──────────────────────────────────────────────────────────
+    doc.setFillColor(4, 13, 18);
+    doc.rect(0, 0, W, 56, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.setTextColor(193, 255, 114);
+    doc.text("Guardian Fall Detection System", MARGIN, 24);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(160, 160, 180);
+    doc.text("Hospital Patient Handover Report", MARGIN, 40);
+
+    // Event ID + timestamp (top-right)
+    doc.setFontSize(7.5);
+    doc.setTextColor(130, 130, 150);
+    const meta = `${incident.eventId}  ·  ${new Date(incident.createdAt).toLocaleString()}`;
+    doc.text(meta, W - MARGIN, 40, { align: "right" });
+
+    // ── Report body ──────────────────────────────────────────────────────────
+    doc.setTextColor(30, 30, 40);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+
+    const lines = doc.splitTextToSize(incident.reportText, CONTENT_W);
+    let y = 80;
+    const LINE_H = 15;
+    const PAGE_BOTTOM = H - MARGIN;
+
+    for (const line of lines) {
+      if (y + LINE_H > PAGE_BOTTOM) {
+        doc.addPage();
+        y = MARGIN;
+      }
+      doc.text(line, MARGIN, y);
+      y += LINE_H;
+    }
+
+    // ── Footer ───────────────────────────────────────────────────────────────
+    const pageCount = (
+      doc.internal as unknown as { getNumberOfPages(): number }
+    ).getNumberOfPages();
+    for (let p = 1; p <= pageCount; p++) {
+      doc.setPage(p);
+      doc.setFontSize(7);
+      doc.setTextColor(160, 160, 175);
+      doc.text(
+        `Guardian · Confidential · Page ${p} of ${pageCount}`,
+        W / 2,
+        H - 18,
+        { align: "center" },
+      );
+    }
+
+    doc.save(`guardian-handover-${incident.eventId}.pdf`);
+  }
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleOutside(e: MouseEvent) {
+      if (dlRef.current && !dlRef.current.contains(e.target as Node)) {
+        setDlOpen(false);
+      }
+    }
+    if (dlOpen) document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [dlOpen]);
 
   const backPath =
     role === "ADMIN" ? "/admin/incidents" : "/responder/incidents";
@@ -201,7 +294,7 @@ export default function IncidentDetailClient({ id, role }: Props) {
       </div>
 
       {/* Notes */}
-      <div className='shrink-0 bg-surface border border-line rounded p-3'>
+      <div className='shrink-0 bg-surface border border-line rounded p-3 hidden'>
         <p className='section-label mb-2'>Notes</p>
         <textarea
           value={notes}
@@ -339,56 +432,113 @@ export default function IncidentDetailClient({ id, role }: Props) {
 
           {/* ── Report ── */}
           {tab === "report" && (
-            <div className='flex flex-col gap-3'>
-              <div className='flex items-center justify-between'>
-                <p className='section-label'>AI Incident Report</p>
-                {!incident.reportGenerated && (
-                  <button
-                    onClick={generateReport}
-                    disabled={genReport}
-                    className='flex items-center gap-1.5 bg-accent hover:bg-accent-dark border-none rounded px-3 py-1.5 text-white font-semibold text-xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed transition-colors'
-                  >
-                    {genReport && (
-                      <Loader2 size={12} className='animate-spin' />
-                    )}
-                    Generate Report
-                  </button>
-                )}
+            <div className='flex flex-col gap-4'>
+              {/* Header row */}
+              <div className='flex items-start justify-between gap-3'>
+                <div>
+                  <p className='text-xs font-semibold text-fg'>
+                    Hospital Handover Summary
+                  </p>
+                  <p className='text-[10px] text-fg-muted mt-0.5'>
+                    AI-generated from incident logs, voice transcript, and
+                    sensor data.
+                    {incident.reportGenerated &&
+                      " Regenerate to reflect latest notes."}
+                  </p>
+                </div>
+                <button
+                  onClick={generateReport}
+                  disabled={genReport}
+                  className='shrink-0 flex items-center gap-1.5 bg-accent/12 hover:bg-accent/22 border border-accent/30 rounded-full px-3 py-1.5 text-accent font-semibold text-[11px] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95'
+                >
+                  {genReport ? (
+                    <>
+                      <Loader2 size={11} className='animate-spin' /> Generating…
+                    </>
+                  ) : incident.reportGenerated ? (
+                    "↻ Regenerate"
+                  ) : (
+                    "Generate"
+                  )}
+                </button>
               </div>
 
-              {incident.reportText ? (
-                <div>
-                  <p
-                    className='text-xs text-fg leading-relaxed rounded border-l-2 px-3 py-2.5'
-                    style={{
-                      background: rgba(colors.accent, 0.06),
-                      borderLeftColor: colors.accent,
-                    }}
-                  >
-                    {incident.reportText}
-                  </p>
-                  <button
-                    onClick={() => {
-                      const blob = new Blob([incident.reportText!], {
-                        type: "text/plain",
-                      });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement("a");
-                      a.href = url;
-                      a.download = `incident-${incident.eventId}.txt`;
-                      a.click();
-                    }}
-                    className='mt-3 bg-transparent border border-line rounded px-3 py-1.5 text-fg-muted hover:text-fg text-xs cursor-pointer transition-colors'
-                  >
-                    Download Report
-                  </button>
+              {/* Report body */}
+              {genReport && !incident.reportText && (
+                <div className='flex items-center gap-2 text-xs text-fg-muted py-8 justify-center'>
+                  <Loader2 size={14} className='animate-spin text-accent' />
+                  Analysing logs and transcript…
                 </div>
-              ) : (
-                <p className='text-xs text-fg-muted'>
-                  {incident.status === "RESOLVED"
-                    ? "Click 'Generate Report' to create an AI-written incident summary."
-                    : "Report generation is available once the incident is resolved."}
-                </p>
+              )}
+
+              {incident.reportText && (
+                <div className='flex flex-col gap-3'>
+                  {/* Structured display */}
+                  <div className='bg-page border border-line rounded-lg px-4 py-3.5'>
+                    <div className='flex items-center gap-1.5 mb-3 pb-2.5 border-b border-line'>
+                      <FileText size={11} className='text-accent' />
+                      <span className='text-[10px] font-semibold uppercase tracking-widest text-fg-muted'>
+                        Guardian Fall Detection System · Patient Handover
+                      </span>
+                    </div>
+                    <p className='text-[11px] text-fg leading-relaxed whitespace-pre-wrap'>
+                      {incident.reportText}
+                    </p>
+                    <div className='mt-3 pt-2.5 border-t border-line flex items-center justify-between'>
+                      <span className='text-[9px] text-fg-muted font-mono'>
+                        {incident.eventId} ·{" "}
+                        {new Date(incident.createdAt).toLocaleString()}
+                      </span>
+
+                      {/* ── Download dropdown ── */}
+                      <div ref={dlRef} className='relative'>
+                        <button
+                          onClick={() => setDlOpen((o) => !o)}
+                          className='flex items-center gap-1.5 text-[10px] text-fg-muted hover:text-fg border border-line hover:border-line/80 rounded px-2.5 py-1 cursor-pointer transition-colors'
+                        >
+                          <Download size={10} />
+                          Download
+                          <ChevronDown
+                            size={9}
+                            className={`transition-transform ${dlOpen ? "rotate-180" : ""}`}
+                          />
+                        </button>
+
+                        {dlOpen && (
+                          <div className='absolute right-0 bottom-full mb-1.5 w-36 bg-surface border border-line rounded-lg shadow-lg overflow-hidden z-20'>
+                            <button
+                              onClick={downloadTxt}
+                              className='w-full flex items-center gap-2 px-3 py-2 text-[11px] text-fg-muted hover:text-fg hover:bg-line/10 transition-colors cursor-pointer'
+                            >
+                              <FileText size={11} className='text-accent/70' />
+                              Plain Text (.txt)
+                            </button>
+                            <button
+                              onClick={downloadPdf}
+                              className='w-full flex items-center gap-2 px-3 py-2 text-[11px] text-fg-muted hover:text-fg hover:bg-line/10 transition-colors cursor-pointer'
+                            >
+                              <FileText size={11} className='text-accent/70' />
+                              PDF Document (.pdf)
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!incident.reportText && !genReport && (
+                <div className='flex flex-col items-center justify-center gap-2 py-10 text-center'>
+                  <FileText size={22} className='text-fg-muted/30' />
+                  <p className='text-xs font-medium text-fg/60'>
+                    No report yet
+                  </p>
+                  <p className='text-[10px] text-fg-muted/50 max-w-[260px] leading-relaxed'>
+                    Click Generate to create a hospital handover summary using
+                    the full incident log and voice transcript.
+                  </p>
+                </div>
               )}
             </div>
           )}

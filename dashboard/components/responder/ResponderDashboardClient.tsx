@@ -35,6 +35,7 @@ interface Alert {
   ar?: number;
   downDuration?: number;
   timestamp: number;
+  velocity?: number;
 }
 
 type ChatLanguage = "English" | "Thai" | "Japanese" | "Chinese";
@@ -229,6 +230,8 @@ export default function ResponderDashboardClient({
         setEscalated(false);
         setLineNotified(false);
         seenEventKeys.current.clear();
+        // Re-anchor the current event so StrictMode's second invocation is still deduplicated
+        seenEventKeys.current.add(`fall_alert_${msg.event_id}`);
         incidentIdRef.current = null;
         setStatus("UNACKNOWLEDGED");
         setIncidentId(null);
@@ -240,6 +243,7 @@ export default function ResponderDashboardClient({
           ar: msg.ar,
           downDuration: msg.down_duration,
           timestamp: msg.timestamp,
+          velocity: msg.velocity ?? 0,
         });
         try {
           const res = await fetch("/api/incidents", {
@@ -251,6 +255,7 @@ export default function ResponderDashboardClient({
               personId: msg.person_id ?? 0,
               ar: msg.ar ?? 0,
               downDuration: msg.down_duration ?? 0,
+              velocity: msg.velocity ?? 0,
             }),
           });
           if (res.ok) {
@@ -401,6 +406,24 @@ export default function ResponderDashboardClient({
       setTranscript([]);
       setIsThinking(false);
       try {
+        // Fetch full incident context (logs, transcripts, notes) if we have an incident ID
+        let fullIncident: {
+          logs: { type: string; message: string; timestamp: string }[];
+          transcripts: { speaker: string; text: string }[];
+          notes: string | null;
+        } | null = null;
+
+        if (activeAlert && incidentIdRef.current) {
+          try {
+            const res = await fetch(`/api/incidents/${incidentIdRef.current}`);
+            if (res.ok) {
+              fullIncident = await res.json();
+            }
+          } catch {
+            /* non-critical — fall back to basic context */
+          }
+        }
+
         await fetch(`${API_URL}/call/start`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -418,6 +441,22 @@ export default function ResponderDashboardClient({
                   // Live total — initial downDuration + seconds elapsed since alarm
                   down_duration: totalDownRef.current,
                   status: incidentStatus,
+                  // Exact detection timestamp from the FastAPI heartbeat WS message
+                  detected_at: String(activeAlert.timestamp),
+                  // Hip velocity at fall moment from pose estimation
+                  fall_velocity: activeAlert.velocity ?? 0,
+                  notes: fullIncident?.notes ?? "",
+                  logs: (fullIncident?.logs ?? []).map((l) => ({
+                    type: l.type,
+                    message: l.message,
+                    timestamp: l.timestamp,
+                  })),
+                  prev_transcripts: (fullIncident?.transcripts ?? []).map(
+                    (t) => ({
+                      speaker: t.speaker,
+                      text: t.text,
+                    }),
+                  ),
                 }
               : null,
           }),
