@@ -54,3 +54,10 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Dashboard (Next.js)
+dashboard/.next/
+dashboard/node_modules/
+dashboard/dev.db
+dashboard/dev.db-journal
+dashboard/.env.local

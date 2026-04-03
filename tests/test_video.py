@@ -1,216 +1,267 @@
 """
-tests/test_video.py — Hackathon Demo Version
-Shows state machine + AR on screen.
+tests/test_video.py — GUARDIAN Fall Detection
+Local inference via Roboflow inference SDK (no network round trip).
 Press Q to quit.
 """
-import cv2
+
+import os
 import time
 import threading
-from ultralytics import YOLO
-from core.fall_logic import FallLogic, ALARM, RECOVERY, STABLE, TRANSITION, VALIDATION, INACTIVITY
-from core.sos_gesture import SOSGestureDetector
-from alerts.server import start_server, broadcast_fall, broadcast_sos, broadcast_recovery
+import cv2
+from dotenv import load_dotenv
 
-model   = YOLO("models/best.pt")
-logic   = FallLogic()
-sos_det = SOSGestureDetector()
+load_dotenv()
 
-CLASSES = {0: "bending", 1: "down", 2: "up"}
-COLORS  = {
-    0: (0, 165, 255),   # orange  - bending
-    1: (0, 0, 255),     # red     - down
-    2: (0, 255, 0),     # green   - up
+from inference import get_model
+from alerts.fall_logic   import FallLogic, ALARM, STABLE, SLEEPING, TRANSITION, VALIDATION, INACTIVITY
+from alerts.pose_analyzer import PoseAnalyzer
+from alerts.server import start_server, broadcast_fall, broadcast_recovery, update_frame, broadcast_heartbeat, broadcast_state, get_viz_flags, register_fall_logic, get_config
+
+# ── Load model locally (downloaded once, cached on disk) ─────
+# Model runs on-device — no network call per frame.
+_model_id = f"{os.getenv('ROBOFLOW_PROJECT')}/{os.getenv('ROBOFLOW_VERSION', '1')}"
+print(f"[Model] Loading {_model_id} (may take 30–60s)...")
+model = get_model(
+    model_id = _model_id,
+    api_key  = os.getenv("ROBOFLOW_API_KEY"),
+)
+print("[Model] Ready")
+
+INFER_CONF = 0.4    # confidence threshold (0–1)
+
+COLORS = {
+    "bending": (0, 165, 255),   # orange
+    "down":    (0, 0,   255),   # red
+    "up":      (0, 255,   0),   # green
 }
 
 STATE_COLORS = {
-    STABLE:     (0, 255, 0),
-    TRANSITION: (0, 165, 255),
-    
-    VALIDATION: (0, 165, 255),
-    INACTIVITY: (0, 100, 255),
-    ALARM:      (0, 0, 255),
-    RECOVERY:   (255, 255, 0),
+    STABLE:     (0,   255,   0),   # green
+    SLEEPING:   (180,  80, 220),   # purple
+    TRANSITION: (0,   165, 255),   # orange
+    VALIDATION: (0,   165, 255),   # orange
+    INACTIVITY: (0,   100, 255),   # red-orange
+    ALARM:      (0,     0, 255),   # red
+    "RECOVERY": (255, 255,   0),   # yellow
 }
 
-# ── Start alert server in background ─────────────────────
+# ── Fall logic + skeleton analyzer + alert server ─────────────
+logic         = FallLogic()
+pose_analyzer = PoseAnalyzer()
+
+# Register logic with server so PUT /config can hot-update thresholds
+register_fall_logic(logic)
+
 print("[Main] Starting alert server...")
 server_thread = threading.Thread(target=start_server, daemon=True)
 server_thread.start()
-print("[Main] Alert server running on port 8765 ✅")
-print("[Main] Find your IP with: ipconfig getifaddr en0")
+print("[Main] Alert server running on port 8765")
+print("[Main] Find your IP with: ipconfig getifaddr en0\n")
 
-print("\nStarting webcam... Press Q to quit\n")
-CAMERA_INDEX = 0
+# Apply initial config so thresholds are set from server state
+import time as _t
+_t.sleep(1.5)
+cfg = get_config()
+logic.AR_FALL_THRESHOLD   = cfg["arThreshold"]
+logic.MAX_TRANSITION_TIME = cfg["transitionTime"]
+logic.DOWN_CONFIRM        = cfg["confirmSeconds"]
+logic.FALL_VEL_THRESHOLD  = cfg["fallVelThreshold"]
+logic.SLEEP_VEL_THRESHOLD = cfg["sleepVelThreshold"]
+logic.POSE_SPINE_FALLEN   = cfg["poseSpineFallen"]
+logic.RECOVERY_LABEL_TIME = cfg["recoveryLabelTime"]
+logic.MOVEMENT_THRESHOLD  = cfg["movementThreshold"]
 
-cap = cv2.VideoCapture(CAMERA_INDEX)
+CAMERA_INDEX = get_config()["cameraIndex"]
 
-# iPhone works better with these settings
-if CAMERA_INDEX == 0:
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+def _open_camera(index: int) -> cv2.VideoCapture:
+    cap = cv2.VideoCapture(index)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-    cap.set(cv2.CAP_PROP_FPS, 30)
-else:
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    return cap
 
-sos_triggered   = False
-sos_time        = 0
-last_heartbeat  = 0
-alerted_persons = set()   # track which persons already alerted
+cap = _open_camera(CAMERA_INDEX)
 
-def on_sos(ts):
-    # Handled in main loop with person_is_down check
-    pass
+alerted_persons: set  = set()
+last_heartbeat        = 0.0
+last_broadcast_state  = STABLE   # track to fire state_update only on change
+_consecutive_failures = 0
+_MAX_FAILURES         = 30       # ~1 s at 30 fps before reconnect attempt
 
-sos_det.on_sos(on_sos)
+# Create window explicitly so macOS gives it proper keyboard focus
+cv2.namedWindow("Test Camera", cv2.WINDOW_NORMAL)
 
-frame_count = 0
+print("Starting webcam... Press Q to quit\n")
 
 while True:
     ret, frame = cap.read()
+
+    # ── Camera dropout: retry with reconnect ─────────────────
     if not ret:
-        break
+        _consecutive_failures += 1
+        if _consecutive_failures >= _MAX_FAILURES:
+            print(f"[Camera] {_consecutive_failures} consecutive read failures — reconnecting…")
+            cap.release()
+            time.sleep(1.0)
+            cap = _open_camera(CAMERA_INDEX)
+            _consecutive_failures = 0
+            if not cap.isOpened():
+                print("[Camera] Reconnect failed — retrying in 3 s…")
+                time.sleep(3.0)
+        continue
+    _consecutive_failures = 0
 
-    frame_count += 1
-    h, w        = frame.shape[:2]
-    now         = time.time()
+    h, w = frame.shape[:2]
+    now  = time.time()
 
-    results       = model(frame, verbose=False, conf=0.5)
+    # ── Run Roboflow inference ────────────────────────────────
+    try:
+        results = model.infer(frame, confidence=INFER_CONF)
+        preds   = results[0].predictions if results else []
+    except Exception as exc:
+        print(f"[Inference]  {exc}")
+        preds = []
+
+    # ── Build person bounding boxes for pose matching ─────────
+    person_boxes = {}
+    for i, pred in enumerate(preds):
+        person_boxes[i] = (
+            int(pred.x - pred.width  / 2),
+            int(pred.y - pred.height / 2),
+            int(pred.x + pred.width  / 2),
+            int(pred.y + pred.height / 2),
+        )
+
+    # ── Run MediaPipe pose analysis ───────────────────────────
+    try:
+        pose_signals = pose_analyzer.analyze(frame, person_boxes) if preds else {}
+    except Exception as exc:
+        print(f"[Pose]  {exc}")
+        pose_signals = {}
+
+    # ── Read visualizer flags (live-toggleable from dashboard) ─
+    viz = get_viz_flags()
+
+    # ── Draw skeleton overlay (if enabled) ────────────────────
+    if viz["skeleton"]:
+        pose_analyzer.draw(frame)
+
     any_alarm     = False
     current_state = STABLE
-    persons_count = 0
+    persons_count = len(preds)
 
-    for result in results:
-        for i, box in enumerate(result.boxes):
-            x1, y1, x2, y2 = map(int, box.xyxy[0])
-            cls_id     = int(box.cls[0])
-            confidence = float(box.conf[0])
-            label      = CLASSES.get(cls_id, "unknown")
-            color      = COLORS.get(cls_id, (255, 255, 255))
-            persons_count += 1
+    for i, pred in enumerate(preds):
+        x1, y1, x2, y2 = person_boxes[i]
 
-            # Run state machine
-            fall_result   = logic.update(i, label, (x1, y1, x2, y2))
+        label      = pred.class_name    # "up" | "bending" | "down"
+        confidence = pred.confidence
+        color      = COLORS.get(label, (255, 255, 255))
+        pose       = pose_signals.get(i)
+
+        # ── Run combined state machine ────────────────────────
+        try:
+            fall_result   = logic.update(i, label, (x1, y1, x2, y2), pose=pose)
             current_state = fall_result["state"]
+        except Exception as exc:
+            print(f"[FallLogic] person {i}: {exc}")
+            continue
 
-            # ── Broadcast fall alert (only once per event) ─
-            if fall_result["is_alarm"]:
-                any_alarm = True
-                if i not in alerted_persons:
-                    alerted_persons.add(i)
-                    broadcast_fall(
-                        person_id     = i,
-                        ar            = fall_result["aspect_ratio"],
-                        down_duration = fall_result["down_duration"],
-                    )
+        # ── Broadcast fall alert (once per person per incident)
+        if fall_result["is_alarm"]:
+            any_alarm = True
+            if i not in alerted_persons:
+                alerted_persons.add(i)
+                broadcast_fall(
+                    person_id     = i,
+                    ar            = fall_result["aspect_ratio"],
+                    down_duration = fall_result["down_duration"],
+                    velocity      = fall_result.get("hip_velocity", 0.0),
+                )
 
-            # ── Broadcast recovery ─────────────────────────
-            if fall_result["is_recovery"] and i in alerted_persons:
-                alerted_persons.discard(i)
-                broadcast_recovery(i)
+        # ── Broadcast recovery ────────────────────────────────
+        if fall_result["is_recovery"] and i in alerted_persons:
+            alerted_persons.discard(i)
+            broadcast_recovery(i, down_duration=fall_result["down_duration"])
 
-            # Reset alerted state when person recovers
-            if current_state == STABLE and i in alerted_persons:
-                alerted_persons.discard(i)
+        if current_state == STABLE and i in alerted_persons:
+            # Fallback: person returned to STABLE without triggering is_recovery
+            alerted_persons.discard(i)
+            broadcast_recovery(i, down_duration=fall_result["down_duration"])
 
-            # Draw bounding box
+        # ── Draw bounding box + labels (if enabled) ──────────
+        if viz["bbox"]:
             box_color = STATE_COLORS.get(current_state, color)
             cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
 
-            # Label + confidence
-            cv2.putText(frame, f"{label} {confidence:.0%}",
-                       (x1, y1 - 10),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, box_color, 2)
+            top_text = f"{label} {confidence:.0%}"
+            if current_state == SLEEPING:
+                top_text += "  [SLEEPING]"
+            cv2.putText(frame, top_text,
+                        (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, box_color, 2)
+            cv2.putText(frame, f"AR:{fall_result['aspect_ratio']}",
+                        (x1, y2 + 22), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (200, 200, 200), 1)
 
-            # AR value on box
-            cv2.putText(frame,
-                       f"AR:{fall_result['aspect_ratio']}",
-                       (x1, y2 + 22),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.55,
-                       (200, 200, 200), 1)
+            # Pose signal readout beneath the box
+            if pose and pose.get("visible"):
+                spine = pose.get("spine_angle")
+                vel   = pose.get("hip_velocity")
+                head  = pose.get("head_below_waist")
+                info  = (
+                    f"spine:{spine:.0f}° vel:{vel:+.2f}/s"
+                    if spine is not None and vel is not None else ""
+                )
+                if head:
+                    info += " HEAD↓"
+                cv2.putText(frame, info,
+                            (x1, y2 + 42), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (100, 220, 255), 1)
 
-    # ── Heartbeat every 3 seconds ─────────────────────────
+    # ── Broadcast state change immediately ───────────────────
+    if current_state != last_broadcast_state:
+        broadcast_state(current_state, persons_count)
+        last_broadcast_state = current_state
+
+    # ── Heartbeat every 3 s (carries state as backup sync) ───
     if now - last_heartbeat > 3.0:
         last_heartbeat = now
-        from alerts.server import broadcast_heartbeat
-        broadcast_heartbeat(persons_count)
+        broadcast_heartbeat(persons_count, current_state)
 
-    # ── SOS check every 3rd frame ─────────────────────────
-    if frame_count % 3 == 0:
-        rgb        = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        sos_status = sos_det.process(rgb)
+    # ── Top status banner (if enabled) ────────────────────────
+    if viz["status_bar"]:
+        banner_color = STATE_COLORS.get(current_state, (50, 50, 50))
+        cv2.rectangle(frame, (0, 0), (w, 70), banner_color, -1)
 
-        # Only allow SOS when person is actually down
-        person_is_down = current_state in [
-            TRANSITION, VALIDATION, INACTIVITY, ALARM
-        ]
-
-        g_state    = sos_status["gesture_state"]
-        g_progress = sos_status["progress"]
-
-        # Show progress bars only when person is down
-        if person_is_down:
-            if g_state == "palm_seen":
-                cv2.putText(frame, "Step 1: Hold palm...",
-                           (w - 320, h - 60),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-                           (0, 200, 255), 2)
-                bar_w = int(200 * g_progress)
-                cv2.rectangle(frame, (w - 320, h - 45),
-                             (w - 320 + bar_w, h - 30),
-                             (0, 200, 255), -1)
-
-            elif g_state == "fist_seen":
-                cv2.putText(frame, "Step 2: Close fist...",
-                           (w - 320, h - 60),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-                           (0, 140, 255), 2)
-                bar_w = int(200 * g_progress)
-                cv2.rectangle(frame, (w - 320, h - 45),
-                             (w - 320 + bar_w, h - 30),
-                             (0, 140, 255), -1)
-
-            elif g_state == "triggered":
-                sos_triggered = True
-                sos_time      = time.time()
-                broadcast_sos(sos_time)
-
-    # ── Top status banner ─────────────────────────────────
-    banner_color = STATE_COLORS.get(current_state, (50, 50, 50))
-
-    if sos_triggered:
-        banner_color = (0, 140, 255)
-
-    cv2.rectangle(frame, (0, 0), (w, 70), banner_color, -1)
-
-    if sos_triggered:
-        # Auto reset after 10 seconds
-        if now - sos_time > 10:
-            sos_triggered = False
+        if any_alarm:
+            cv2.putText(frame, "FALL DETECTED",
+                        (20, 48), cv2.FONT_HERSHEY_SIMPLEX, 1.4, (255, 255, 255), 3)
+        elif current_state == SLEEPING:
+            cv2.putText(frame, "STATUS: SLEEPING",
+                        (20, 48), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 2)
         else:
-            cv2.putText(frame, "SOS GESTURE — MANUAL ALERT",
-                       (20, 48), cv2.FONT_HERSHEY_SIMPLEX,
-                       1.4, (255, 255, 255), 3)
-    elif any_alarm:
-        cv2.putText(frame, "FALL DETECTED — EMERGENCY",
-                   (20, 48), cv2.FONT_HERSHEY_SIMPLEX,
-                   1.4, (255, 255, 255), 3)
-    else:
-        cv2.putText(frame, f"STATUS: {current_state}",
-                   (20, 48), cv2.FONT_HERSHEY_SIMPLEX,
-                   1.2, (255, 255, 255), 2)
+            cv2.putText(frame, f"STATUS: {current_state}",
+                        (20, 48), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 2)
 
-    # ── Bottom debug bar ──────────────────────────────────
-    cv2.rectangle(frame, (0, h - 35), (w, h), (30, 30, 30), -1)
-    if results and results[0].boxes:
-        reason = logic.states.get(0, {}).get("reason", "")
-        cv2.putText(frame, f"reason: {reason}",
-                   (10, h - 10),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.55,
-                   (180, 180, 180), 1)
+    # ── Bottom debug bar (if enabled) ─────────────────────────
+    if viz["status_bar"]:
+        cv2.rectangle(frame, (0, h - 35), (w, h), (30, 30, 30), -1)
+        if preds:
+            reason = logic.states.get(0, {}).get("reason", "")
+            cv2.putText(frame, f"reason: {reason}",
+                        (10, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (180, 180, 180), 1)
 
-    cv2.imshow("Fall Detection — Hackathon Demo", frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    # ── Push annotated frame to MJPEG stream ─────────────────
+    try:
+        _, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        update_frame(jpeg.tobytes())
+    except Exception as exc:
+        print(f"[Frame encode] {exc}")
+
+    cv2.imshow("Test Camera", frame)
+    key = cv2.waitKey(1) & 0xFF
+    # Q key or window close button (WND_PROP_VISIBLE drops to 0)
+    try:
+        window_closed = cv2.getWindowProperty("Test Camera", cv2.WND_PROP_VISIBLE) < 1
+    except Exception:
+        window_closed = False
+    if key == ord("q") or key == 27 or window_closed:
         break
 
 cap.release()

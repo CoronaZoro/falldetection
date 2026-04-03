@@ -1,0 +1,96 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String     @id @default(cuid())
+  name         String
+  email        String     @unique
+  password     String
+  role         Role       @default(RESPONDER)
+  isAuthorized Boolean    @default(false)
+  phone        String?
+  lineId       String?    // LINE user ID (starts with "U") for push notifications
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  incidents    Incident[]
+}
+
+enum Role {
+  ADMIN
+  RESPONDER
+}
+
+model Incident {
+  id              String               @id @default(cuid())
+  eventId         String               @unique
+  type            IncidentType
+  personId        Int
+  ar              Float
+  downDuration    Float
+  velocity        Float                @default(0)
+  status          IncidentStatus       @default(UNACKNOWLEDGED)
+  acknowledgedBy  String?
+  acknowledgedAt  DateTime?
+  resolvedAt      DateTime?
+  notes           String?
+  reportGenerated Boolean              @default(false)
+  reportText      String?
+  createdAt       DateTime             @default(now())
+  user            User?                @relation(fields: [acknowledgedBy], references: [id])
+  logs            IncidentLog[]
+  transcripts     IncidentTranscript[]
+}
+
+model IncidentLog {
+  id         String   @id @default(cuid())
+  incidentId String
+  type       String   // "fall" | "recovery" | "ack" | "status"
+  message    String
+  timestamp  DateTime @default(now())
+  incident   Incident @relation(fields: [incidentId], references: [id])
+}
+
+model IncidentTranscript {
+  id         String   @id @default(cuid())
+  incidentId String
+  speaker    String   // "user" | "assistant"
+  text       String
+  timestamp  DateTime @default(now())
+  incident   Incident @relation(fields: [incidentId], references: [id])
+}
+
+enum IncidentType {
+  FALL
+}
+
+enum IncidentStatus {
+  UNACKNOWLEDGED
+  ACKNOWLEDGED
+  RESPONDING
+  ON_SCENE
+  RESOLVED
+  RECOVERED
+  FALSE_ALARM
+}
+
+model SystemConfig {
+  id                String   @id @default(cuid())
+  location          String   @default("Guardian Monitoring Station")
+  cameraIndex       Int      @default(0)
+  arThreshold       Float    @default(1.5)
+  transitionTime    Float    @default(1.2)
+  confirmSeconds    Float    @default(1.5)
+  escalationSeconds  Int      @default(15)
+  fallVelThreshold   Float    @default(0.30)
+  sleepVelThreshold  Float    @default(0.20)
+  poseSpineFallen    Float    @default(45.0)
+  recoveryLabelTime  Float    @default(0.5)
+  movementThreshold  Int      @default(10)
+  updatedAt         DateTime @updatedAt
+}
