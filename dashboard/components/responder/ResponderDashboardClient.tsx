@@ -801,7 +801,7 @@ export default function ResponderDashboardClient({
                         </div>
                       )}
                       {lineNotified && (
-                        <div className='flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-success border border-success/35'>
+                        <div className='flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-success border border-success/35 hidden'>
                           <CheckCircle size={11} className='shrink-0' />
                           LINE alert sent to all responders
                         </div>
