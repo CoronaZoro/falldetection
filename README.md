@@ -65,7 +65,7 @@ falldetection/
 ### 1. Create & activate virtual environment
 
 ```bash
-python -m venv venv
+python3 -m venv venv
 source venv/bin/activate        # macOS/Linux
 # venv\Scripts\activate         # Windows
 ```
@@ -73,8 +73,7 @@ source venv/bin/activate        # macOS/Linux
 ### 2. Install Python dependencies
 
 ```bash
-pip install inference fastapi uvicorn opencv-python python-dotenv \
-            anthropic SpeechRecognition pyaudio webrtcvad-wheels edge-tts mediapipe
+pip3 install -r requirements.txt
 ```
 
 > **PyAudio on macOS** requires PortAudio first:
@@ -139,7 +138,7 @@ Place `best.pt` in `models/`. The MediaPipe pose model must be downloaded manual
 ```bash
 # Terminal 1 — Detection engine + FastAPI server (camera + WebSocket + voice)
 source venv/bin/activate
-python tests/test_video.py
+PYTHONPATH=. python3 tests/test_video.py
 
 # Terminal 2 — Next.js dashboard
 cd dashboard
@@ -373,12 +372,12 @@ Toggles call `PUT /visualization` immediately; the Python loop reads flags once 
 
 ## Dashboard Accounts (seed defaults)
 
-| Role                     | Email                   | Password | Access                 |
-| ------------------------ | ----------------------- | -------- | ---------------------- |
-| Admin                    | admin@guardian.com      | admin123 | Full system management |
-| Responder (Authorized)   | responder@guardian.com  | resp123  | Clinical guidance      |
-| Responder (Demo)         | demo@guardian.com       | demo123  | Emergency contacts     |
-| Responder (Demo 2)       | demo2@guardian.com      | demo456  | Emergency contacts     |
+| Role                   | Email                  | Password | Access                 |
+| ---------------------- | ---------------------- | -------- | ---------------------- |
+| Admin                  | admin@guardian.com     | admin123 | Full system management |
+| Responder (Authorized) | responder@guardian.com | resp123  | Clinical guidance      |
+| Responder (Demo)       | demo@guardian.com      | demo123  | Emergency contacts     |
+| Responder (Demo 2)     | demo2@guardian.com     | demo456  | Emergency contacts     |
 
 > Add LINE IDs to responder profiles (User Management → Edit) so they receive LINE broadcast alerts on escalation.
 

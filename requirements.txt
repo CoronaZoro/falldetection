@@ -1,0 +1,11 @@
+inference
+fastapi
+uvicorn
+opencv-python
+python-dotenv
+anthropic
+SpeechRecognition
+pyaudio
+webrtcvad-wheels
+edge-tts
+mediapipe
